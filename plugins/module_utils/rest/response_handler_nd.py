@@ -55,10 +55,8 @@ TODO: Should response be converted to a Pydantic model by this class?
 """
 
 # isort: off
-# fmt: off
 from __future__ import (absolute_import, division, print_function)
 from __future__ import annotations
-# fmt: on
 # isort: on
 
 # pylint: disable=invalid-name
@@ -193,8 +191,8 @@ class ResponseHandler:
         if self._strategy.is_not_found(return_code):
             result["found"] = False
             result["success"] = True
-        # Success codes with no embedded error - resource found
-        elif self._strategy.is_success(self.response):
+        # Success codes - resource found
+        elif self._strategy.is_success(return_code):
             result["found"] = True
             result["success"] = True
         # Error codes - request failed
@@ -220,13 +218,21 @@ class ResponseHandler:
                 -   False otherwise
         """
         result = {}
+        return_code = self.response.get("RETURN_CODE")
 
-        # Success codes with no embedded error indicate the operation completed.
-        # Use the modified header (when present) as the authoritative signal for
-        # whether state was actually changed, falling back to True when absent.
-        if self._strategy.is_success(self.response):
+        # Check for explicit error in response
+        if self.response.get("ERROR") is not None:
+            result["success"] = False
+            result["changed"] = False
+        # Check for error in response data (ND error format)
+        elif self.response.get("DATA", {}).get("error") is not None:
+            result["success"] = False
+            result["changed"] = False
+        # Success codes indicate the operation completed
+        elif self._strategy.is_success(return_code):
             result["success"] = True
-            result["changed"] = self._strategy.is_changed(self.response)
+            result["changed"] = True
+        # Any other status code is an error
         else:
             result["success"] = False
             result["changed"] = False

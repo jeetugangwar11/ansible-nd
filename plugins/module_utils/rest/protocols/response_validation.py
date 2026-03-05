@@ -19,10 +19,8 @@ implementing a new strategy class allows clean separation of v1 and v2 logic.
 """
 
 # isort: off
-# fmt: off
 from __future__ import (absolute_import, division, print_function)
 from __future__ import annotations
-# fmt: on
 # isort: on
 
 # pylint: disable=invalid-name
@@ -99,25 +97,32 @@ class ResponseValidationStrategy(Protocol):
         """
         ...
 
-    def is_success(self, response: dict) -> bool:
+    @property
+    def error_codes(self) -> set[int]:
         """
         # Summary
 
-        Check if the full response indicates success.
-
-        ## Description
-
-        Implementations must check both the HTTP status code and any embedded error
-        indicators in the response body, since some ND API endpoints return a
-        successful status code (e.g. 200) while embedding an error in the payload.
-
-        ## Parameters
-
-        - response: Response dict with keys RETURN_CODE, MESSAGE, DATA, etc.
+        Return set of HTTP status codes considered errors.
 
         ## Returns
 
-        - True if the response is fully successful (good status code and no embedded error), False otherwise
+        - Set of integers representing error status codes
+        """
+        ...
+
+    def is_success(self, return_code: int) -> bool:
+        """
+        # Summary
+
+        Check if return code indicates success.
+
+        ## Parameters
+
+        - return_code: HTTP status code to check
+
+        ## Returns
+
+        - True if code is in success_codes, False otherwise
 
         ## Raises
 
@@ -145,30 +150,19 @@ class ResponseValidationStrategy(Protocol):
         """
         ...
 
-    def is_changed(self, response: dict) -> bool:
+    def is_error(self, return_code: int) -> bool:
         """
         # Summary
 
-        Check if a successful mutation request actually changed state.
-
-        ## Description
-
-        Some ND API endpoints include a `modified` response header (string `"true"` or
-        `"false"`) that explicitly signals whether the operation mutated any state.
-        Implementations should honour this header when present and default to `True`
-        when it is absent (matching the historical behaviour for PUT/POST/DELETE).
-
-        This method should only be called after `is_success` has returned `True`.
+        Check if return code indicates error.
 
         ## Parameters
 
-        - response: Response dict with keys RETURN_CODE, MESSAGE, DATA, and any HTTP
-          response headers (lowercased) forwarded by the HttpAPI plugin.
+        - return_code: HTTP status code to check
 
         ## Returns
 
-        - True if the operation changed state (or if the `modified` header is absent)
-        - False if the `modified` header is explicitly `"false"`
+        - True if code is in error_codes, False otherwise
 
         ## Raises
 

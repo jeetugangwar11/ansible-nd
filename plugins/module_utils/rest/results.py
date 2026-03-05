@@ -10,10 +10,8 @@ Exposes public class Results to collect results across Ansible tasks.
 """
 
 # isort: off
-# fmt: off
 from __future__ import (absolute_import, division, print_function)
 from __future__ import annotations
-# fmt: on
 # isort: on
 
 # pylint: disable=invalid-name
@@ -33,15 +31,15 @@ from ansible_collections.cisco.nd.plugins.module_utils.common.pydantic_compat im
 from ansible_collections.cisco.nd.plugins.module_utils.enums import OperationType
 
 
-class ApiCallResult(BaseModel):
+class TaskResultData(BaseModel):
     """
     # Summary
 
     Pydantic model for a single task result.
 
-    Represents all data for one API call including its response, result, diff,
+    Represents all data for one task including its response, result, diff,
     and metadata. Immutable after creation to prevent accidental modification
-    of registered results.
+    of registered tasks.
 
     ## Raises
 
@@ -102,14 +100,14 @@ class FinalResultData(BaseModel):
     metadata: list[dict[str, Any]] = Field(default_factory=list)
 
 
-class PendingApiCall(BaseModel):
+class CurrentTaskData(BaseModel):
     """
     # Summary
 
     Pydantic model for the current task data being built.
 
     Mutable model used to stage data for the current task before
-    it's registered and converted to an immutable `ApiCallResult`.
+    it's registered and converted to an immutable `TaskResultData`.
     Provides validation while allowing flexibility during the build phase.
 
     ## Raises
@@ -153,8 +151,8 @@ class Results:
 
     This class uses a three-model Pydantic architecture for data validation:
 
-    1.  `PendingApiCall` - Mutable staging area for building the current task
-    2.  `ApiCallResult` - Immutable registered API call result with validation (frozen=True)
+    1.  `CurrentTaskData` - Mutable staging area for building the current task
+    2.  `TaskResultData` - Immutable registered task with validation (frozen=True)
     3.  `FinalResultData` - Aggregated result for Ansible output
 
     The lifecycle is: **Build (Current) → Register (Task) → Aggregate (Final)**
@@ -170,8 +168,8 @@ class Results:
     2.  Populate the `Results` instance with the current task data
         -   Set properties: `response_current`, `result_current`, `diff_current`
         -   Set metadata properties: `action`, `state`, `check_mode`, `operation_type`
-    3. Optional. Register the task result with `Results.register_api_call()`
-        -   Converts current task to immutable `ApiCallResult`
+    3. Optional. Register the task result with `Results.register_task_result()`
+        -   Converts current task to immutable `TaskResultData`
         -   Validates data with Pydantic
         -   Resets current task for next registration
         -   Tasks are NOT required to be registered.  There are cases where
@@ -181,7 +179,7 @@ class Results:
     `Results` should be instantiated in the main Ansible Task class and
     passed to all other task classes for which results are to be collected.
     The task classes should populate the `Results` instance with the results
-    of the task and then register the results with `Results.register_api_call()`.
+    of the task and then register the results with `Results.register_task_result()`.
 
     This may be done within a separate class (as in the example below, where
     the `FabricDelete()` class is called from the `TaskDelete()` class.
@@ -236,7 +234,7 @@ class Results:
             ...
             self.fabric_delete.fabric_names = ["FABRIC_1", "FABRIC_2"]
             self.fabric_delete.results = self.results
-            # results.register_api_call() is optionally called within the
+            # results.register_task_result() is optionally called within the
             # commit() method of the FabricDelete class.
             self.fabric_delete.commit()
     ```
@@ -333,8 +331,8 @@ class Results:
             self._results.response_current = self._rest_send.response_current
             self._results.result_current = self._rest_send.result_current
             self._results.diff_current = {}  # or actual diff if available
-            # register_api_call() determines changed/failed automatically
-            self._results.register_api_call()
+            # register_task_result() determines changed/failed automatically
+            self._results.register_task_result()
             ...
 
         @property
@@ -359,13 +357,20 @@ class Results:
         self.task_sequence_number: int = 0
 
         # Registered tasks (immutable after registration)
-        self._tasks: list[ApiCallResult] = []
+        self._tasks: list[TaskResultData] = []
 
         # Current task being built (mutable)
-        self._current: PendingApiCall = PendingApiCall()
+        self._current: CurrentTaskData = CurrentTaskData()
+
+        # Aggregated state (derived from tasks)
+        self._changed: set[bool] = set()
+        self._failed: set[bool] = set()
 
         # Final result (built on demand)
         self._final_result: Optional[FinalResultData] = None
+
+        # Legacy: response_data list for backward compatibility
+        self._response_data: list[dict[str, Any]] = []
 
         msg = f"ENTERED {self.class_name}():"
         self.log.debug(msg)
@@ -374,17 +379,22 @@ class Results:
         """
         # Summary
 
-        No-op. Formerly added a dict to the response_data list.
-
-        .. deprecated::
-
-            `add_response_data()` is deprecated and may be removed in a future release.
-            Use `register_api_call()` instead; response data is now derived from registered tasks.
+        Add a dict to the response_data list.
 
         ## Raises
 
-        None
+        -   `TypeError`: if value is not a dict
+
+        ## See also
+
+        `@response_data` property
         """
+        method_name: str = "add_response_data"
+        if not isinstance(value, dict):
+            msg = f"{self.class_name}.{method_name}: "
+            msg += f"instance.add_response_data must be a dict. Got {value}"
+            raise TypeError(msg)
+        self._response_data.append(copy.deepcopy(value))
 
     def _increment_task_sequence_number(self) -> None:
         """
@@ -447,13 +457,13 @@ class Results:
         self.log.debug(msg)
         return has_diff_content
 
-    def register_api_call(self) -> None:
+    def register_task_result(self) -> None:
         """
         # Summary
 
         Register the current task result.
 
-        Converts `PendingApiCall` to immutable `ApiCallResult`, increments
+        Converts `CurrentTaskData` to immutable `TaskResultData`, increments
         sequence number, and aggregates changed/failed status. The current task
         is then reset for the next task.
 
@@ -469,11 +479,11 @@ class Results:
         3.  Determine if anything changed using `_determine_if_changed()`
         4.  Determine if task failed based on `result["success"]` flag
         5.  Add sequence_number to response, result, and diff
-        6.  Create immutable `ApiCallResult` with validation
+        6.  Create immutable `TaskResultData` with validation
         7.  Register the task and update aggregated changed/failed sets
         8.  Reset current task for next registration
         """
-        method_name: str = "register_api_call"
+        method_name: str = "register_task_result"
 
         msg = f"{self.class_name}.{method_name}: "
         msg += f"ENTERED: action={self._current.action}, "
@@ -518,9 +528,9 @@ class Results:
         diff = copy.deepcopy(self._current.diff)
         diff["sequence_number"] = self.task_sequence_number
 
-        # Create immutable ApiCallResult with validation
+        # Create immutable TaskResultData with validation
         try:
-            task_data = ApiCallResult(
+            task_data = TaskResultData(
                 sequence_number=self.task_sequence_number,
                 response=response,
                 result=result,
@@ -536,9 +546,11 @@ class Results:
 
         # Register the task
         self._tasks.append(task_data)
+        self._changed.add(changed)
+        self._failed.add(failed)
 
         # Reset current task for next task
-        self._current = PendingApiCall()
+        self._current = CurrentTaskData()
 
         # Log registration
         if self.log.isEnabledFor(logging.DEBUG):
@@ -586,7 +598,7 @@ class Results:
         method_name: str = "build_final_result"
 
         msg = f"{self.class_name}.{method_name}: "
-        msg += f"changed={self.changed}, failed={self.failed}"
+        msg += f"changed={self._changed}, failed={self._failed}"
         self.log.debug(msg)
 
         # Aggregate data from all tasks
@@ -598,8 +610,8 @@ class Results:
         # Create FinalResultData with validation
         try:
             self._final_result = FinalResultData(
-                changed=True in self.changed,
-                failed=True in self.failed,
+                changed=True in self._changed,
+                failed=True in self._failed,
                 diff=diff_list,
                 response=response_list,
                 result=result_list,
@@ -748,8 +760,6 @@ class Results:
 
         Returns a set() containing boolean values indicating whether anything changed.
 
-        Derived from the `changed` attribute of all registered `ApiCallResult` tasks.
-
         ## Raises
 
         None
@@ -760,9 +770,9 @@ class Results:
 
         ## See also
 
-        -  `register_api_call()` method to register tasks.
+        -  `register_task_result()` method to register tasks and update the changed set.
         """
-        return {task.changed for task in self._tasks}
+        return self._changed
 
     @property
     def check_mode(self) -> bool:
@@ -832,9 +842,7 @@ class Results:
         """
         # Summary
 
-        A set() of boolean values indicating whether any tasks failed.
-
-        Derived from the `failed` attribute of all registered `ApiCallResult` tasks.
+        A set() of boolean values indicating whether any tasks failed
 
         - If the set contains True, at least one task failed.
         - If the set contains only False all tasks succeeded.
@@ -845,9 +853,9 @@ class Results:
 
         ## See also
 
-        -  `register_api_call()` method to register tasks.
+        -  `register_task_result()` method to register tasks and update the failed set.
         """
-        return {task.failed for task in self._tasks}
+        return self._failed
 
     @property
     def metadata(self) -> list[dict[str, Any]]:
@@ -934,11 +942,8 @@ class Results:
         """
         # Summary
 
-        Return a `list` of `dict`, where each `dict` contains the contents of the DATA key within the responses that have been added.
-
-        .. deprecated::
-
-            `response_data` is deprecated and may be removed in a future release. Use the `response` property instead.
+        Return a `list` of `dict`, where each `dict` contains the contents of the DATA key
+        within the responses that have been added.
 
         ## Raises
 
@@ -948,7 +953,7 @@ class Results:
 
         `add_response_data()` method to add to the response_data list.
         """
-        return self.response
+        return self._response_data
 
     @property
     def result(self) -> list[dict[str, Any]]:

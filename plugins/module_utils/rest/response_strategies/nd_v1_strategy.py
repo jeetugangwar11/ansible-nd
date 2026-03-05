@@ -18,10 +18,8 @@ in ResponseHandler, enabling version-specific behavior to be injected.
 """
 
 # isort: off
-# fmt: off
 from __future__ import (absolute_import, division, print_function)
 from __future__ import annotations
-# fmt: on
 # isort: on
 
 # pylint: disable=invalid-name
@@ -46,14 +44,14 @@ class NdV1Strategy:
 
     - Success: 200, 201, 202, 204, 207
     - Not Found: 404 (treated as success for GET)
-    - Error: anything not in success codes and not 404
+    - Error: 405, 409
 
     ## Error Formats Supported
 
     1. raw_response: Non-JSON response stored in DATA.raw_response
     2. code/message: DATA.code and DATA.message
-    3. messages array: all DATA.messages[].{code, severity, message} joined with "; "
-    4. errors array: all DATA.errors[] joined with "; "
+    3. messages array: DATA.messages[0].{code, severity, message}
+    4. errors array: DATA.errors[0]
     5. Connection failure: No DATA with REQUEST_PATH and MESSAGE
     6. Non-dict DATA: Stringified DATA value
     7. Unknown: Fallback with RETURN_CODE
@@ -97,45 +95,42 @@ class NdV1Strategy:
         """
         return 404
 
-    def is_success(self, response: dict) -> bool:
+    @property
+    def error_codes(self) -> set[int]:
         """
         # Summary
 
-        Check if the full response indicates success (v1).
-
-        ## Description
-
-        Returns True only when both conditions hold:
-
-        1. `RETURN_CODE` is in `success_codes`
-        2. The response body contains no embedded error indicators
-
-        Embedded error indicators checked:
-
-        - Top-level `ERROR` key is present
-        - `DATA.error` key is present
-
-        ## Parameters
-
-        - response: Response dict with keys RETURN_CODE, MESSAGE, DATA, etc.
+        Return v1 error codes.
 
         ## Returns
 
-        - True if the response is fully successful, False otherwise
+        - Set of integers: {405, 409}
 
         ## Raises
 
         None
         """
-        return_code = response.get("RETURN_CODE", -1)
-        if return_code not in self.success_codes:
-            return False
-        if response.get("ERROR") is not None:
-            return False
-        data = response.get("DATA")
-        if isinstance(data, dict) and data.get("error") is not None:
-            return False
-        return True
+        return {405, 409}
+
+    def is_success(self, return_code: int) -> bool:
+        """
+        # Summary
+
+        Check if return code indicates success (v1).
+
+        ## Parameters
+
+        - return_code: HTTP status code to check
+
+        ## Returns
+
+        - True if code is in success_codes, False otherwise
+
+        ## Raises
+
+        None
+        """
+        return return_code in self.success_codes
 
     def is_not_found(self, return_code: int) -> bool:
         """
@@ -157,40 +152,25 @@ class NdV1Strategy:
         """
         return return_code == self.not_found_code
 
-    def is_changed(self, response: dict) -> bool:
+    def is_error(self, return_code: int) -> bool:
         """
         # Summary
 
-        Check if a successful mutation request actually changed state (v1).
-
-        ## Description
-
-        ND API v1 may include a `modified` response header (forwarded by the HttpAPI
-        plugin as a lowercase key in the response dict) with string values `"true"` or
-        `"false"`. When present, this header is the authoritative signal for whether
-        the operation mutated any state on the controller.
-
-        When the header is absent the method defaults to `True`, preserving the
-        historical behaviour for verbs (DELETE, POST, PUT) where ND does not send it.
+        Check if return code indicates error (v1).
 
         ## Parameters
 
-        - response: Response dict with keys RETURN_CODE, MESSAGE, DATA, and any HTTP
-          response headers (lowercased) forwarded by the HttpAPI plugin.
+        - return_code: HTTP status code to check
 
         ## Returns
 
-        - False if the `modified` header is present and equals `"false"` (case-insensitive)
-        - True otherwise
+        - True if code is in error_codes, False otherwise
 
         ## Raises
 
         None
         """
-        modified = response.get("modified")
-        if modified is None:
-            return True
-        return str(modified).lower() != "false"
+        return return_code in self.error_codes
 
     def extract_error_message(self, response: dict) -> Optional[str]:
         """
@@ -205,8 +185,8 @@ class NdV1Strategy:
         1. Connection failure (no DATA)
         2. Non-JSON response (raw_response in DATA)
         3. code/message dict
-        4. messages array with code/severity/message (all items joined)
-        5. errors array (all items joined)
+        4. messages array with code/severity/message
+        5. errors array
         6. Unknown dict format
         7. Non-dict DATA
 
@@ -246,16 +226,13 @@ class NdV1Strategy:
 
             # messages array format
             if msg is None and "messages" in data_dict and len(data_dict.get("messages", [])) > 0:
-                parts = []
-                for m in data_dict["messages"]:
-                    if all(k in m for k in ("code", "severity", "message")):
-                        parts.append(f"ND Error {m['code']} ({m['severity']}): {m['message']}")
-                if parts:
-                    msg = "; ".join(parts)
+                first_msg = data_dict["messages"][0]
+                if all(k in first_msg for k in ("code", "severity", "message")):
+                    msg = f"ND Error {first_msg['code']} ({first_msg['severity']}): {first_msg['message']}"
 
             # errors array format
             if msg is None and "errors" in data_dict and len(data_dict.get("errors", [])) > 0:
-                msg = f"ND Error: {'; '.join(str(e) for e in data_dict['errors'])}"
+                msg = f"ND Error: {data_dict['errors'][0]}"
 
             # Unknown dict format - fallback
             if msg is None:
