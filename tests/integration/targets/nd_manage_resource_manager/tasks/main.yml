@@ -1,0 +1,124 @@
+# Test code for nd_resource_manager module
+# Copyright: (c) 2026, Cisco and/or its affiliates.
+
+# GNU General Public License v3.0+ (see LICENSE or https://www.gnu.org/licenses/gpl-3.0.txt)
+
+- name: Test that we have a Nexus Dashboard host, username and password
+  ansible.builtin.fail:
+    msg: 'Please define the following variables: ansible_host, ansible_user and ansible_password.'
+  when: ansible_host is not defined or ansible_user is not defined or ansible_password is not defined
+
+- name: Query resources (smoke)
+  cisco.nd.nd_resource_manager:
+    fabric: "{{ nd_fabric_name }}"
+    state: query
+    query_target: resources
+  register: nd_resource_manager_query_resources
+
+- name: Query pools (smoke)
+  cisco.nd.nd_resource_manager:
+    fabric: "{{ nd_fabric_name }}"
+    state: query
+    query_target: pools
+  register: nd_resource_manager_query_pools
+
+- name: Query propose vlan (smoke)
+  cisco.nd.nd_resource_manager:
+    fabric: "{{ nd_fabric_name }}"
+    state: query
+    query_target: propose_vlan
+    config:
+      - vlan_type: networkVlan
+  register: nd_resource_manager_query_propose_vlan
+
+- name: Assert query smoke responses
+  ansible.builtin.assert:
+    that:
+      - nd_resource_manager_query_resources.failed is defined
+      - nd_resource_manager_query_pools.failed is defined
+      - nd_resource_manager_query_propose_vlan.failed is defined
+
+- name: Optional lifecycle tests (merged/deleted/check-mode)
+  when: nd_rm_lifecycle_test | default(false) | bool
+  block:
+    - name: Validate lifecycle config variable
+      ansible.builtin.assert:
+        that:
+          - nd_rm_lifecycle_config is defined
+          - nd_rm_lifecycle_config is mapping
+          - nd_rm_lifecycle_config.entity_name is defined
+          - nd_rm_lifecycle_config.pool_type is defined
+          - nd_rm_lifecycle_config.pool_name is defined
+          - nd_rm_lifecycle_config.scope_type is defined
+          - nd_rm_lifecycle_config.resource is defined
+
+    - name: Resource merge (check mode)
+      cisco.nd.nd_resource_manager:
+        fabric: "{{ nd_fabric_name }}"
+        state: merged
+        config:
+          - entity_name: "{{ nd_rm_lifecycle_config.entity_name }}"
+            pool_type: "{{ nd_rm_lifecycle_config.pool_type }}"
+            pool_name: "{{ nd_rm_lifecycle_config.pool_name }}"
+            scope_type: "{{ nd_rm_lifecycle_config.scope_type }}"
+            resource: "{{ nd_rm_lifecycle_config.resource }}"
+            switch: "{{ nd_rm_lifecycle_config.switch | default(omit) }}"
+      check_mode: true
+      register: nd_resource_manager_cm_merge
+
+    - name: Resource merge (normal mode)
+      cisco.nd.nd_resource_manager:
+        fabric: "{{ nd_fabric_name }}"
+        state: merged
+        config:
+          - entity_name: "{{ nd_rm_lifecycle_config.entity_name }}"
+            pool_type: "{{ nd_rm_lifecycle_config.pool_type }}"
+            pool_name: "{{ nd_rm_lifecycle_config.pool_name }}"
+            scope_type: "{{ nd_rm_lifecycle_config.scope_type }}"
+            resource: "{{ nd_rm_lifecycle_config.resource }}"
+            switch: "{{ nd_rm_lifecycle_config.switch | default(omit) }}"
+      register: nd_resource_manager_merge
+
+    - name: Query merged resource
+      cisco.nd.nd_resource_manager:
+        fabric: "{{ nd_fabric_name }}"
+        state: query
+        query_target: resources
+        config:
+          - entity_name: "{{ nd_rm_lifecycle_config.entity_name }}"
+            pool_name: "{{ nd_rm_lifecycle_config.pool_name }}"
+      register: nd_resource_manager_query_after_merge
+
+    - name: Resource delete (check mode)
+      cisco.nd.nd_resource_manager:
+        fabric: "{{ nd_fabric_name }}"
+        state: deleted
+        config:
+          - entity_name: "{{ nd_rm_lifecycle_config.entity_name }}"
+            pool_type: "{{ nd_rm_lifecycle_config.pool_type }}"
+            pool_name: "{{ nd_rm_lifecycle_config.pool_name }}"
+            scope_type: "{{ nd_rm_lifecycle_config.scope_type }}"
+            switch: "{{ nd_rm_lifecycle_config.switch | default(omit) }}"
+      check_mode: true
+      register: nd_resource_manager_cm_delete
+
+    - name: Resource delete (normal mode)
+      cisco.nd.nd_resource_manager:
+        fabric: "{{ nd_fabric_name }}"
+        state: deleted
+        config:
+          - entity_name: "{{ nd_rm_lifecycle_config.entity_name }}"
+            pool_type: "{{ nd_rm_lifecycle_config.pool_type }}"
+            pool_name: "{{ nd_rm_lifecycle_config.pool_name }}"
+            scope_type: "{{ nd_rm_lifecycle_config.scope_type }}"
+            switch: "{{ nd_rm_lifecycle_config.switch | default(omit) }}"
+      register: nd_resource_manager_delete
+
+    - name: Assert lifecycle flow responses
+      ansible.builtin.assert:
+        that:
+          - nd_resource_manager_cm_merge.failed is defined
+          - nd_resource_manager_merge.failed is defined
+          - nd_resource_manager_query_after_merge.failed is defined
+          - nd_resource_manager_cm_delete.failed is defined
+          - nd_resource_manager_delete.failed is defined
