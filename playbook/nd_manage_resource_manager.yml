@@ -1,0 +1,386 @@
+---
+# nd_manage_resource_manager.yml
+#
+# Playbook to test the cisco.nd.nd_manage_resource_manager module.
+#
+# Usage:
+#   ansible-playbook -i hosts nd_manage_resource_manager.yml
+#
+# Override vars at runtime:
+#   ansible-playbook -i hosts nd_manage_resource_manager.yml \
+#     -e "fabric=my_fabric switch_1=192.168.1.1 switch_2=192.168.1.2"
+
+- name: Test nd_manage_resource_manager module
+  hosts: nd
+  gather_facts: false
+
+  vars:
+    fabric: "jeet_test"
+    switch_1: "192.175.1.1"
+    switch_2: "192.175.1.2"
+    serial_1: "9M99N34RDED"
+    serial_2: "9NXHSNTEO6C"
+
+  tasks:
+
+    # =========================================================================
+    # MERGED – Create resources
+    # =========================================================================
+
+    # - name: Create ID resource scoped to fabric (L3_VNI)
+    #   cisco.nd.nd_manage_resource_manager:
+    #     state: merged
+    #     fabric: "{{ fabric }}"
+    #     config:
+    #       - entity_name: "l3_vni_fabric"
+    #         pool_type: "ID"
+    #         pool_name: "L3_VNI"
+    #         scope_type: "fabric"
+    #         resource: "101"
+    #   register: result_create_id_fabric
+
+    # - name: Verify ID fabric resource creation
+    #   ansible.builtin.assert:
+    #     that:
+    #       - result_create_id_fabric is not failed
+    #     fail_msg: "Failed to create ID fabric resource"
+
+    # - name: Create ID resource scoped to device_pair (VPC_ID)
+    #   cisco.nd.nd_manage_resource_manager:
+    #     state: merged
+    #     fabric: "{{ fabric }}"
+    #     config:
+    #       - entity_name: "{{ serial_1 }}~{{ serial_2 }}"
+    #         pool_type: "ID"
+    #         pool_name: "VPC_ID"
+    #         scope_type: "device_pair"
+    #         switch:
+    #           - "{{ switch_1 }}"
+    #           - "{{ switch_2 }}"
+    #         resource: "500"
+    #   register: result_create_id_device_pair
+
+    # - name: Verify device_pair ID resource creation
+    #   ansible.builtin.assert:
+    #     that:
+    #       - result_create_id_device_pair is not failed
+    #     fail_msg: "Failed to create device_pair ID resource"
+
+    # - name: Create IP resource scoped to fabric (LOOPBACK0_IP_POOL)
+    #   cisco.nd.nd_manage_resource_manager:
+    #     state: merged
+    #     fabric: "{{ fabric }}"
+    #     config:
+    #       - entity_name: "mmudigon-2"
+    #         pool_type: "IP"
+    #         pool_name: "LOOPBACK0_IP_POOL"
+    #         scope_type: "fabric"
+    #         resource: "110.1.1.1"
+    #   register: result_create_ip_fabric
+
+    # - name: Verify IP fabric resource creation
+    #   ansible.builtin.assert:
+    #     that:
+    #       - result_create_ip_fabric is not failed
+    #     fail_msg: "Failed to create IP fabric resource"
+
+    # - name: Create IP resource scoped to device_interface (LOOPBACK1_IP_POOL)
+    #   cisco.nd.nd_manage_resource_manager:
+    #     state: merged
+    #     fabric: "{{ fabric }}"
+    #     config:
+    #       - entity_name: "{{ serial_1 }}~Ethernet1/10"
+    #         pool_type: "IP"
+    #         pool_name: "LOOPBACK1_IP_POOL"
+    #         scope_type: "device_interface"
+    #         switch:
+    #           - "{{ switch_1 }}"
+    #         resource: "fe80::04"
+    #   register: result_create_ip_device_interface
+
+    # - name: Verify device_interface IP resource creation
+    #   ansible.builtin.assert:
+    #     that:
+    #       - result_create_ip_device_interface is not failed
+    #     fail_msg: "Failed to create device_interface IP resource"
+
+    # - name: Create SUBNET resource scoped to link
+    #   cisco.nd.nd_manage_resource_manager:
+    #     state: merged
+    #     fabric: "{{ fabric }}"
+    #     config:
+    #       - entity_name: "{{ serial_1 }}~Ethernet1/3~{{ serial_2 }}~Ethernet1/3"
+    #         pool_type: "SUBNET"
+    #         pool_name: "SUBNET"
+    #         scope_type: "link"
+    #         switch:
+    #           - "{{ switch_1 }}"
+    #         resource: "fe80:05::05/64"
+    #   register: result_create_subnet_link
+
+    # - name: Verify link SUBNET resource creation
+    #   ansible.builtin.assert:
+    #     that:
+    #       - result_create_subnet_link is not failed
+    #     fail_msg: "Failed to create link SUBNET resource"
+
+    # =========================================================================
+    # MERGED – Idempotency check (re-run with same config)
+    # =========================================================================
+
+    # - name: Idempotency – Re-create L3_VNI fabric resource (should report no change)
+    #   cisco.nd.nd_manage_resource_manager:
+    #     state: merged
+    #     fabric: "{{ fabric }}"
+    #     config:
+    #       - entity_name: "l3_vni_fabric"
+    #         pool_type: "ID"
+    #         pool_name: "L3_VNI"
+    #         scope_type: "fabric"
+    #         resource: "101"
+    #   register: result_idempotent
+
+    # - name: Verify idempotency
+    #   ansible.builtin.assert:
+    #     that:
+    #       - result_idempotent is not failed
+    #       - result_idempotent is not changed
+    #     fail_msg: "Idempotency check failed – module reported a change on an identical re-run"
+
+    # =========================================================================
+    # QUERY – Various filter combinations
+    # =========================================================================
+
+    - name: Query all resources (no filters)
+      cisco.nd.nd_manage_resource_manager:
+        state: query
+        fabric: "{{ fabric }}"
+      register: result_query_all
+
+    - name: Print query all result
+      ansible.builtin.debug:
+        var: result_query_all.response
+
+    - name: Verify query all returned a list
+      ansible.builtin.assert:
+        that:
+          - result_query_all is not failed
+          - result_query_all.response is defined
+        fail_msg: "Query all resources failed"
+
+    - name: Query resources – filter by entity name
+      cisco.nd.nd_manage_resource_manager:
+        state: query
+        fabric: "{{ fabric }}"
+        config:
+          - entity_name: "l3_vni_fabric"
+          - entity_name: "mmudigon-2"
+          - entity_name: "{{ serial_1 }}~{{ serial_2 }}"
+          - entity_name: "{{ serial_1 }}~Ethernet1/10"
+          - entity_name: "{{ serial_1 }}~Ethernet1/3~{{ serial_2 }}~Ethernet1/3"
+      register: result_query_by_entity
+
+    - name: Print query by entity name result
+      ansible.builtin.debug:
+        var: result_query_by_entity.response
+
+    - name: Verify query by entity name
+      ansible.builtin.assert:
+        that:
+          - result_query_by_entity is not failed
+        fail_msg: "Query by entity name failed"
+
+    - name: Query resources – filter by switch
+      cisco.nd.nd_manage_resource_manager:
+        state: query
+        fabric: "{{ fabric }}"
+        config:
+          - switch:
+              - "{{ switch_1 }}"
+      register: result_query_by_switch
+
+    - name: Print query by switch result
+      ansible.builtin.debug:
+        var: result_query_by_switch.response
+
+    - name: Verify query by switch
+      ansible.builtin.assert:
+        that:
+          - result_query_by_switch is not failed
+        fail_msg: "Query by switch failed"
+
+    - name: Query resources – filter by pool name
+      cisco.nd.nd_manage_resource_manager:
+        state: query
+        fabric: "{{ fabric }}"
+        config:
+          - pool_name: "L3_VNI"
+          - pool_name: "VPC_ID"
+          - pool_name: "SUBNET"
+      register: result_query_by_pool
+
+    - name: Print query by pool name result
+      ansible.builtin.debug:
+        var: result_query_by_pool.response
+
+    - name: Verify query by pool name
+      ansible.builtin.assert:
+        that:
+          - result_query_by_pool is not failed
+        fail_msg: "Query by pool name failed"
+
+    - name: Query resources – filter by switch and pool name
+      cisco.nd.nd_manage_resource_manager:
+        state: query
+        fabric: "{{ fabric }}"
+        config:
+          - pool_name: "L3_VNI"
+            switch:
+              - "{{ switch_1 }}"
+          - pool_name: "VPC_ID"
+            switch:
+              - "{{ switch_2 }}"
+      register: result_query_switch_pool
+
+    - name: Print query by switch and pool name result
+      ansible.builtin.debug:
+        var: result_query_switch_pool.response
+
+    - name: Verify query by switch and pool name
+      ansible.builtin.assert:
+        that:
+          - result_query_switch_pool is not failed
+        fail_msg: "Query by switch and pool name failed"
+
+    - name: Query resources – mixed filters
+      cisco.nd.nd_manage_resource_manager:
+        state: query
+        fabric: "{{ fabric }}"
+        config:
+          - entity_name: "l3_vni_fabric"
+          - switch:
+              - "{{ switch_1 }}"
+          - pool_name: "VPC_ID"
+            switch:
+              - "{{ switch_1 }}"
+      register: result_query_mixed
+
+    - name: Print mixed query result
+      ansible.builtin.debug:
+        var: result_query_mixed.response
+
+    - name: Verify mixed query
+      ansible.builtin.assert:
+        that:
+          - result_query_mixed is not failed
+        fail_msg: "Mixed query failed"
+
+    # =========================================================================
+    # DELETED – Remove resources
+    # =========================================================================
+
+    # - name: Delete L3_VNI fabric resource
+    #   cisco.nd.nd_manage_resource_manager:
+    #     state: deleted
+    #     fabric: "{{ fabric }}"
+    #     config:
+    #       - entity_name: "l3_vni_fabric"
+    #         pool_type: "ID"
+    #         pool_name: "L3_VNI"
+    #         scope_type: "fabric"
+    #   register: result_delete_id_fabric
+
+    # - name: Verify L3_VNI fabric resource deletion
+    #   ansible.builtin.assert:
+    #     that:
+    #       - result_delete_id_fabric is not failed
+    #     fail_msg: "Failed to delete L3_VNI fabric resource"
+
+    # - name: Delete device_pair VPC_ID resource
+    #   cisco.nd.nd_manage_resource_manager:
+    #     state: deleted
+    #     fabric: "{{ fabric }}"
+    #     config:
+    #       - entity_name: "{{ serial_1 }}~{{ serial_2 }}"
+    #         pool_type: "ID"
+    #         pool_name: "VPC_ID"
+    #         scope_type: "device_pair"
+    #         switch:
+    #           - "{{ switch_1 }}"
+    #           - "{{ switch_2 }}"
+    #   register: result_delete_vpc_id
+
+    # - name: Verify VPC_ID deletion
+    #   ansible.builtin.assert:
+    #     that:
+    #       - result_delete_vpc_id is not failed
+    #     fail_msg: "Failed to delete VPC_ID resource"
+
+    # - name: Delete LOOPBACK0_IP_POOL fabric resource
+    #   cisco.nd.nd_manage_resource_manager:
+    #     state: deleted
+    #     fabric: "{{ fabric }}"
+    #     config:
+    #       - entity_name: "mmudigon-2"
+    #         pool_type: "IP"
+    #         pool_name: "LOOPBACK0_IP_POOL"
+    #         scope_type: "fabric"
+    #   register: result_delete_loopback0
+
+    # - name: Verify LOOPBACK0 deletion
+    #   ansible.builtin.assert:
+    #     that:
+    #       - result_delete_loopback0 is not failed
+    #     fail_msg: "Failed to delete LOOPBACK0_IP_POOL resource"
+
+    # - name: Delete LOOPBACK1_IP_POOL device_interface resource
+    #   cisco.nd.nd_manage_resource_manager:
+    #     state: deleted
+    #     fabric: "{{ fabric }}"
+    #     config:
+    #       - entity_name: "{{ serial_1 }}~Ethernet1/10"
+    #         pool_type: "IP"
+    #         pool_name: "LOOPBACK1_IP_POOL"
+    #         scope_type: "device_interface"
+    #         switch:
+    #           - "{{ switch_1 }}"
+    #   register: result_delete_loopback1
+
+    # - name: Verify LOOPBACK1 deletion
+    #   ansible.builtin.assert:
+    #     that:
+    #       - result_delete_loopback1 is not failed
+    #     fail_msg: "Failed to delete LOOPBACK1_IP_POOL resource"
+
+    # - name: Delete link SUBNET resource
+    #   cisco.nd.nd_manage_resource_manager:
+    #     state: deleted
+    #     fabric: "{{ fabric }}"
+    #     config:
+    #       - entity_name: "{{ serial_1 }}~Ethernet1/3~{{ serial_2 }}~Ethernet1/3"
+    #         pool_type: "SUBNET"
+    #         pool_name: "SUBNET"
+    #         scope_type: "link"
+    #         switch:
+    #           - "{{ switch_1 }}"
+    #   register: result_delete_subnet
+
+    # - name: Verify SUBNET link resource deletion
+    #   ansible.builtin.assert:
+    #     that:
+    #       - result_delete_subnet is not failed
+    #     fail_msg: "Failed to delete link SUBNET resource"
+
+    # =========================================================================
+    # POST-DELETE QUERY – Verify resources are gone
+    # =========================================================================
+
+    # - name: Query all resources after deletion (should be empty or reduced)
+    #   cisco.nd.nd_manage_resource_manager:
+    #     state: query
+    #     fabric: "{{ fabric }}"
+    #   register: result_query_after_delete
+
+    - name: Display post-delete query result
+      ansible.builtin.debug:
+        var: result_query_after_delete.current
