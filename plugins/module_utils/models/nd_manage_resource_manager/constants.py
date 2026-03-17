@@ -17,7 +17,7 @@ __metaclass__ = type
 from enum import Enum
 from typing import Dict, List
 
-from ansible_collections.cisco.nd.plugins.module_utils.models.nd_manage_resource_manager.nd_manage_resource_manager import (
+from ansible_collections.cisco.nd.plugins.module_utils.models.nd_manage_resource_manager.VlanTypeEnum import (
     VlanType,
 )
 

@@ -35,7 +35,6 @@ class ProposeVlanQuery(NDBaseModel):
     identifiers: ClassVar[List[str]] = []
 
     vlan_type: VlanType = Field(
-        ...,
         alias="vlanType",
         description=(
             "The type of VLAN to propose. "

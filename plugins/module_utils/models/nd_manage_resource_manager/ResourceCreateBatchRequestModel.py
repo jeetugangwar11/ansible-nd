@@ -36,7 +36,7 @@ class ResourceCreateBatchRequest(NDBaseModel):
     identifiers: ClassVar[List[str]] = []
 
     resources: List[CreateResourceRequest] = Field(
-        ..., description="Array of resource configs to allocate"
+        description="Array of resource configs to allocate"
     )
 
     def to_payload(self) -> Dict[str, Any]:

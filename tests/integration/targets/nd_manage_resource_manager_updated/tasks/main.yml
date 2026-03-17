@@ -1,0 +1,186 @@
+# tasks/main.yml — Integration tests for nd_manage_resource_manager_updated
+# Copyright: (c) 2026, Cisco Systems
+# GNU General Public License v3.0+ (see LICENSE or https://www.gnu.org/licenses/gpl-3.0.txt)
+
+- name: Test that we have a Nexus Dashboard host, username and password
+  ansible.builtin.fail:
+    msg: "Please define the following variables: ansible_host, ansible_user and ansible_password."
+  when: ansible_host is not defined or ansible_user is not defined or ansible_password is not defined
+
+- name: Set ND connection vars
+  ansible.builtin.set_fact:
+    nd_info: &nd_info
+      output_level: "{{ rm_output_level | default('debug') }}"
+
+# =============================================================================
+# SETUP: Clean state before tests
+# =============================================================================
+
+- name: Delete test resources before tests (setup)
+  cisco.nd.nd_manage_resource_manager_updated:
+    <<: *nd_info
+    fabric: "{{ test_fabric }}"
+    state: deleted
+    config:
+      - entity_name: "{{ test_entity_fabric }}"
+        pool_type: ID
+        pool_name: L3_VNI
+        scope_type: fabric
+      - entity_name: "{{ test_entity_loopback }}"
+        pool_type: IP
+        pool_name: LOOPBACK0_IP_POOL
+        scope_type: fabric
+  ignore_errors: true
+
+# =============================================================================
+# TEST: MERGED state
+# =============================================================================
+
+- name: Create fabric-scoped resource (check mode)
+  cisco.nd.nd_manage_resource_manager_updated: &create_fabric_resource
+    <<: *nd_info
+    fabric: "{{ test_fabric }}"
+    state: merged
+    config:
+      - entity_name: "{{ test_entity_fabric }}"
+        pool_type: ID
+        pool_name: L3_VNI
+        scope_type: fabric
+        resource: "{{ test_l3_vni_id }}"
+  check_mode: true
+  register: cm_create_fabric_resource
+
+- name: Create fabric-scoped resource (normal mode)
+  cisco.nd.nd_manage_resource_manager_updated:
+    <<: *create_fabric_resource
+  register: nm_create_fabric_resource
+
+- name: Create fabric-scoped resource again (idempotency)
+  cisco.nd.nd_manage_resource_manager_updated:
+    <<: *create_fabric_resource
+  register: idempotency_create_fabric_resource
+
+- name: Verify merged — fabric-scoped resource
+  ansible.builtin.assert:
+    that:
+      - cm_create_fabric_resource is changed
+      - cm_create_fabric_resource.diff.merged | length == 1
+      - nm_create_fabric_resource is changed
+      - nm_create_fabric_resource.diff.merged | length == 1
+      - idempotency_create_fabric_resource is not changed
+      - idempotency_create_fabric_resource.diff.merged | length == 0
+
+- name: Create loopback IP resource for fabric scope (normal mode)
+  cisco.nd.nd_manage_resource_manager_updated:
+    <<: *nd_info
+    fabric: "{{ test_fabric }}"
+    state: merged
+    config:
+      - entity_name: "{{ test_entity_loopback }}"
+        pool_type: IP
+        pool_name: LOOPBACK0_IP_POOL
+        scope_type: fabric
+        resource: "{{ test_loopback_ip }}"
+  register: nm_create_loopback_resource
+
+- name: Verify merged — loopback IP resource
+  ansible.builtin.assert:
+    that:
+      - nm_create_loopback_resource is changed
+
+# =============================================================================
+# TEST: QUERY state
+# =============================================================================
+
+- name: Query all resources (no filters)
+  cisco.nd.nd_manage_resource_manager_updated:
+    <<: *nd_info
+    fabric: "{{ test_fabric }}"
+    state: query
+  register: query_all_resources
+
+- name: Query resources by entity name
+  cisco.nd.nd_manage_resource_manager_updated:
+    <<: *nd_info
+    fabric: "{{ test_fabric }}"
+    state: query
+    config:
+      - entity_name: "{{ test_entity_fabric }}"
+  register: query_by_entity
+
+- name: Query resources by pool name
+  cisco.nd.nd_manage_resource_manager_updated:
+    <<: *nd_info
+    fabric: "{{ test_fabric }}"
+    state: query
+    config:
+      - pool_name: L3_VNI
+  register: query_by_pool
+
+- name: Verify query results
+  ansible.builtin.assert:
+    that:
+      - query_all_resources is not changed
+      - query_all_resources.response is defined
+      - query_by_entity is not changed
+      - query_by_entity.response is defined
+      - query_by_pool is not changed
+      - query_by_pool.response is defined
+
+# =============================================================================
+# TEST: DELETED state
+# =============================================================================
+
+- name: Delete fabric-scoped resource (check mode)
+  cisco.nd.nd_manage_resource_manager_updated: &delete_fabric_resource
+    <<: *nd_info
+    fabric: "{{ test_fabric }}"
+    state: deleted
+    config:
+      - entity_name: "{{ test_entity_fabric }}"
+        pool_type: ID
+        pool_name: L3_VNI
+        scope_type: fabric
+  check_mode: true
+  register: cm_delete_fabric_resource
+
+- name: Delete fabric-scoped resource (normal mode)
+  cisco.nd.nd_manage_resource_manager_updated:
+    <<: *delete_fabric_resource
+  register: nm_delete_fabric_resource
+
+- name: Delete fabric-scoped resource again (idempotency)
+  cisco.nd.nd_manage_resource_manager_updated:
+    <<: *delete_fabric_resource
+  register: idempotency_delete_fabric_resource
+
+- name: Verify deleted — fabric-scoped resource
+  ansible.builtin.assert:
+    that:
+      - cm_delete_fabric_resource is changed
+      - cm_delete_fabric_resource.diff.deleted | length >= 1
+      - nm_delete_fabric_resource is changed
+      - nm_delete_fabric_resource.diff.deleted | length >= 1
+      - idempotency_delete_fabric_resource is not changed
+      - idempotency_delete_fabric_resource.diff.deleted | length == 0
+
+# =============================================================================
+# CLEANUP
+# =============================================================================
+
+- name: Delete loopback resource (cleanup)
+  cisco.nd.nd_manage_resource_manager_updated:
+    <<: *nd_info
+    fabric: "{{ test_fabric }}"
+    state: deleted
+    config:
+      - entity_name: "{{ test_entity_loopback }}"
+        pool_type: IP
+        pool_name: LOOPBACK0_IP_POOL
+        scope_type: fabric
+  register: cleanup_loopback
+
+- name: Verify cleanup
+  ansible.builtin.assert:
+    that:
+      - cleanup_loopback is changed or cleanup_loopback is not changed

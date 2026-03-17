@@ -56,7 +56,6 @@ class CreateResourceRequest(NDBaseModel):
     identifiers: ClassVar[List[str]] = []
 
     entity_name: str = Field(
-        ...,
         description=(
             "Name by which the resource is allocated. "
             "Format depends on scope_type: "
@@ -67,22 +66,18 @@ class CreateResourceRequest(NDBaseModel):
         ),
     )
     pool_type: PoolType = Field(
-        ...,
         description="Type of resource pool. One of: ID (integer), IP (IP address), SUBNET (CIDR block).",
     )
     pool_name: str = Field(
-        ...,
         description=(
             "Name of the resource pool to use (e.g. 'LOOPBACK_ID', 'IP_POOL', 'SUBNET'). "
             "For known pool names the scope_type must match the allowed scopes."
         ),
     )
     scope_type: ScopeType = Field(
-        ...,
         description="Scope level for the resource. One of: fabric, device, device_interface, device_pair, link.",
     )
     is_pre_allocated: bool = Field(
-        ...,
         description=(
             "Whether the resource value is pre-allocated. "
             "Set to True to reserve a specific resource value; "

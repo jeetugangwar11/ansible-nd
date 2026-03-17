@@ -32,7 +32,6 @@ class RemoveResourcesByIdsRequest(NDBaseModel):
     identifiers: ClassVar[List[str]] = []
 
     resource_ids: List[int] = Field(
-        ...,
         alias="resourceIds",
         min_length=1,
         description="Array of resource IDs to remove. Must contain at least one ID.",

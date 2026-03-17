@@ -1,0 +1,23 @@
+# defaults/main.yml — Test variables for nd_manage_resource_manager_updated
+# Copyright: (c) 2026, Cisco Systems
+# GNU General Public License v3.0+ (see LICENSE or https://www.gnu.org/licenses/gpl-3.0.txt)
+
+# Target fabric name — override via extra-vars for non-default environments
+test_fabric: test_fabric
+
+# Switch management IPs — must exist in the fabric before running tests
+test_switch_1_ip: 192.175.1.1
+test_switch_2_ip: 192.175.1.2
+
+# Resource values used in tests
+test_l3_vni_id: "90001"
+test_vpc_id: "500"
+test_loopback_ip: "110.1.1.100"
+test_subnet_cidr: "192.168.100.0/30"
+
+# Entity names (fabric-scoped)
+test_entity_fabric: "ansible_test_l3_vni"
+test_entity_loopback: "ansible_test_loopback"
+
+# Entity names (switch-scoped — serial numbers substituted by module)
+test_entity_link: "FSW1~Ethernet1/3~FSW2~Ethernet1/3"
