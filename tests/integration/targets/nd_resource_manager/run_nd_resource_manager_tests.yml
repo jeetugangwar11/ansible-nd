@@ -1,0 +1,63 @@
+---
+# run_nd_resource_manager_tests.yml
+#
+# Playbook to run all three nd_resource_manager_with_smart_endpoint integration
+# tests against a live Nexus Dashboard instance.
+#
+# Usage (from the playbook/ directory):
+#   OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES \
+#   ansible-playbook -i hosts ../tests/integration/targets/nd_resource_manager/run_nd_resource_manager_tests.yml \
+#     -e "ansible_it_fabric=jeet_test ansible_switch1=192.175.1.1 ansible_switch2=192.175.1.2 ansible_sno_1=9M99N34RDED ansible_sno_2=9NXHSNTEO6C intf_1_3=Ethernet1/3 intf_1_10=Ethernet1/10"
+
+- name: Run nd_resource_manager_with_smart_endpoint integration tests
+  hosts: nd
+  gather_facts: false
+  connection: ansible.netcommon.httpapi
+
+  vars:
+    # Override these vars at runtime with -e or set defaults here
+    ansible_it_fabric: "jeet_test"
+    ansible_switch1:   "192.175.1.1"
+    ansible_switch2:   "192.175.1.2"
+    ansible_sno_1:     "9M99N34RDED"
+    ansible_sno_2:     "9NXHSNTEO6C"
+    intf_1_3:          "Ethernet1/3"
+    intf_1_10:         "Ethernet1/10"
+    intf_1_2:          "Ethernet1/2"
+    nd_output_level:   "debug"
+
+    nd_info: &nd_info
+      host:         "{{ ansible_host }}"
+      username:     "{{ ansible_user }}"
+      password:     "{{ ansible_password }}"
+      output_level: "{{ nd_output_level }}"
+
+  tasks:
+
+    - name: "=== MERGE TESTS ==="
+      ansible.builtin.debug:
+        msg: "Starting merge tests for nd_resource_manager_with_smart_endpoint"
+
+    - name: Run merge tests
+      ansible.builtin.include_tasks:
+        file: "{{ playbook_dir }}/tests/nd/nd_res_manager_merge.yaml"
+
+    - name: "=== QUERY TESTS ==="
+      ansible.builtin.debug:
+        msg: "Starting query tests for nd_resource_manager_with_smart_endpoint"
+
+    - name: Run query tests
+      ansible.builtin.include_tasks:
+        file: "{{ playbook_dir }}/tests/nd/nd_res_manager_query.yaml"
+
+    - name: "=== INVALID PARAMS TESTS ==="
+      ansible.builtin.debug:
+        msg: "Starting invalid params tests for nd_resource_manager_with_smart_endpoint"
+
+    - name: Run invalid params tests
+      ansible.builtin.include_tasks:
+        file: "{{ playbook_dir }}/tests/nd/nd_res_manager_invalid_params.yaml"
+
+    - name: "=== ALL TESTS COMPLETE ==="
+      ansible.builtin.debug:
+        msg: "All nd_resource_manager_with_smart_endpoint integration tests completed."

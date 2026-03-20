@@ -1,0 +1,365 @@
+##############################################
+##               SETUP                      ##
+##############################################
+
+# Re-define nd_info YAML anchor so *nd_info can be used in module args below.
+- name: Re-define nd_info anchor
+  ansible.builtin.set_fact:
+    nd_info: &nd_info
+      host:         "{{ nd_info.host | default(ansible_host) }}"
+      username:     "{{ nd_info.username | default(ansible_user) }}"
+      password:     "{{ nd_info.password | default(ansible_password) }}"
+      output_level: "{{ nd_info.output_level | default('normal') }}"
+
+- name: Delete Resources (cleanup before query tests)
+  cisco.nd.nd_manage_resource_manager: &rm_delete
+    <<: *nd_info
+    state: deleted
+    fabric: "{{ ansible_it_fabric }}"
+    config:
+      - entity_name: "l3_vni_fabric"
+        pool_type: "ID"
+        pool_name: "L3_VNI"
+        scope_type: "fabric"
+
+      - entity_name: "l2_vni_fabric"
+        pool_type: "ID"
+        pool_name: "L2_VNI"
+        scope_type: "fabric"
+
+      - entity_name: "loopback_dev"
+        pool_type: "ID"
+        pool_name: "LOOPBACK_ID"
+        scope_type: "device"
+        switch:
+          - "{{ ansible_switch1 }}"
+          - "{{ ansible_switch2 }}"
+
+      - entity_name: "{{ ansible_sno_1 }}~{{ ansible_sno_2 }}"
+        pool_type: "ID"
+        pool_name: "VPC_ID"
+        scope_type: "device_pair"
+        switch:
+          - "{{ ansible_switch1 }}"
+          - "{{ ansible_switch2 }}"
+
+      - entity_name: "mmudigon-2"
+        pool_type: "IP"
+        pool_name: "LOOPBACK0_IP_POOL"
+        scope_type: "fabric"
+
+      - entity_name: "{{ ansible_sno_1 }}~{{ intf_1_10 }}"
+        pool_type: "IP"
+        pool_name: "LOOPBACK1_IP_POOL"
+        scope_type: "device_interface"
+        switch:
+          - "{{ ansible_switch1 }}"
+
+      - entity_name: "{{ ansible_sno_1 }}~{{ intf_1_3 }}~{{ ansible_sno_2 }}~{{ intf_1_3 }}"
+        pool_type: "SUBNET"
+        pool_name: "SUBNET"
+        scope_type: "link"
+        switch:
+          - "{{ ansible_switch1 }}"
+  register: result
+
+- block:
+
+    ##############################################
+    ##                MERGE                     ##
+    ##############################################
+
+    - name: Create Resources (setup for query tests)
+      cisco.nd.nd_manage_resource_manager: &rm_merge
+        <<: *nd_info
+        state: merged
+        fabric: "{{ ansible_it_fabric }}"
+        config:
+          - entity_name: "l3_vni_fabric"
+            pool_type: "ID"
+            pool_name: "L3_VNI"
+            scope_type: "fabric"
+            resource: "101"
+
+          - entity_name: "l2_vni_fabric"
+            pool_type: "ID"
+            pool_name: "L2_VNI"
+            scope_type: "fabric"
+            resource: "102"
+
+          - entity_name: "loopback_dev"
+            pool_type: "ID"
+            pool_name: "LOOPBACK_ID"
+            scope_type: "device"
+            switch:
+              - "{{ ansible_switch1 }}"
+              - "{{ ansible_switch2 }}"
+            resource: "200"
+
+          - entity_name: "{{ ansible_sno_1 }}~{{ ansible_sno_2 }}"
+            pool_type: "ID"
+            pool_name: "VPC_ID"
+            scope_type: "device_pair"
+            switch:
+              - "{{ ansible_switch1 }}"
+              - "{{ ansible_switch2 }}"
+            resource: "500"
+
+          - entity_name: "mmudigon-2"
+            pool_type: "IP"
+            pool_name: "LOOPBACK0_IP_POOL"
+            scope_type: "fabric"
+            resource: "110.1.1.1"
+
+          - entity_name: "{{ ansible_sno_1 }}~{{ intf_1_10 }}"
+            pool_type: "IP"
+            pool_name: "LOOPBACK1_IP_POOL"
+            scope_type: "device_interface"
+            switch:
+              - "{{ ansible_switch1 }}"
+            resource: "fe:80::04"
+
+          - entity_name: "{{ ansible_sno_1 }}~{{ intf_1_3 }}~{{ ansible_sno_2 }}~{{ intf_1_3 }}"
+            pool_type: "SUBNET"
+            pool_name: "SUBNET"
+            scope_type: "link"
+            switch:
+              - "{{ ansible_switch1 }}"
+            resource: "fe:80:0505::05/64"
+      register: result
+
+    - name: Assert - Create Resources changed
+      ansible.builtin.assert:
+        that:
+          - result.changed == true
+          - (result["diff"][0]["merged"] | length) == 9
+          - (result["diff"][0]["deleted"] | length) == 0
+          - (result["response"] | length) == 9
+
+    - name: Assert - Create Resources HTTP 200
+      ansible.builtin.assert:
+        that:
+          - 'item["RETURN_CODE"] == 200'
+      loop: "{{ result.response }}"
+
+    ##############################################
+    ##               QUERY                      ##
+    ##############################################
+
+    - name: Query all Resources - no filters
+      cisco.nd.nd_manage_resource_manager:
+        <<: *nd_info
+        state: query
+        fabric: "{{ ansible_it_fabric }}"
+      register: result
+
+    - name: Assert - Query all returns non-empty response
+      ansible.builtin.assert:
+        that:
+          - (result["response"] | length) != 0
+
+    - name: Creating entity_names fact for assertion
+      ansible.builtin.set_fact:
+        entity_names:
+          - "l3_vni_fabric"
+          - "l2_vni_fabric"
+          - "loopback_dev"
+          - "{{ ansible_sno_1 }}~{{ ansible_sno_2 }}"
+          - "{{ ansible_sno_2 }}~{{ ansible_sno_1 }}"
+          - "{{ ansible_sno_1 }}~{{ intf_1_10 }}"
+          - "{{ ansible_sno_1 }}~{{ intf_1_3 }}~{{ ansible_sno_2 }}~{{ intf_1_3 }}"
+          - "{{ ansible_sno_2 }}~{{ intf_1_3 }}~{{ ansible_sno_1 }}~{{ intf_1_3 }}"
+          - "mmudigon-2"
+
+    - name: Query Resources - filter by entity name
+      cisco.nd.nd_manage_resource_manager:
+        <<: *nd_info
+        state: query
+        fabric: "{{ ansible_it_fabric }}"
+        config:
+          - entity_name: "l3_vni_fabric"
+          - entity_name: "l2_vni_fabric"
+          - entity_name: "loopback_dev"
+          - entity_name: "{{ ansible_sno_1 }}~{{ ansible_sno_2 }}"
+          - entity_name: "{{ ansible_sno_1 }}~{{ intf_1_10 }}"
+          - entity_name: "{{ ansible_sno_1 }}~{{ intf_1_3 }}~{{ ansible_sno_2 }}~{{ intf_1_3 }}"
+          - entity_name: "mmudigon-2"
+      register: result
+
+    - name: Assert - Query by entity name returns matching results
+      ansible.builtin.assert:
+        that:
+          - 'item["entityName"] in entity_names'
+      loop: "{{ result.response }}"
+
+    - name: Query Resources - filter by switch 1
+      cisco.nd.nd_manage_resource_manager:
+        <<: *nd_info
+        state: query
+        fabric: "{{ ansible_it_fabric }}"
+        config:
+          - switch:
+              - "{{ ansible_switch1 }}"
+      register: result
+
+    - name: Assert - Query by switch 1 returns only switch1 resources
+      ansible.builtin.assert:
+        that:
+          - (result["response"] | length) > 0
+          - 'item["scopeDetails"]["switchIp"] == "{{ ansible_switch1 }}"'
+      loop: "{{ result.response }}"
+
+    - name: Query Resources - filter by switch 2
+      cisco.nd.nd_manage_resource_manager:
+        <<: *nd_info
+        state: query
+        fabric: "{{ ansible_it_fabric }}"
+        config:
+          - switch:
+              - "{{ ansible_switch2 }}"
+      register: result
+
+    - name: Assert - Query by switch 2 returns only switch2 resources
+      ansible.builtin.assert:
+        that:
+          - (result["response"] | length) > 0
+          - 'item["scopeDetails"]["switchIp"] == "{{ ansible_switch2 }}"'
+      loop: "{{ result.response }}"
+
+    - name: Query Resources - filter by pool name
+      cisco.nd.nd_manage_resource_manager:
+        <<: *nd_info
+        state: query
+        fabric: "{{ ansible_it_fabric }}"
+        config:
+          - pool_name: "L3_VNI"
+          - pool_name: "L2_VNI"
+          - pool_name: "LOOPBACK_ID"
+          - pool_name: "VPC_ID"
+          - pool_name: "LOOPBACK0_IP_POOL"
+          - pool_name: "LOOPBACK1_IP_POOL"
+          - pool_name: "SUBNET"
+      register: result
+
+    - name: Assert - Query by pool name returns results with valid pool names
+      ansible.builtin.assert:
+        that:
+          - (result["response"] | length) > 0
+          - item["poolName"] in ["L3_VNI", "L2_VNI", "LOOPBACK_ID", "VPC_ID",
+                                  "LOOPBACK0_IP_POOL", "LOOPBACK1_IP_POOL", "SUBNET"]
+      loop: "{{ result.response }}"
+
+    - name: Query Resources - filter by pool name and fabric scope
+      cisco.nd.nd_manage_resource_manager:
+        <<: *nd_info
+        state: query
+        fabric: "{{ ansible_it_fabric }}"
+        config:
+          - pool_name: "L3_VNI"
+      register: result
+
+    - name: Assert - Query L3_VNI pool has fabric scope
+      ansible.builtin.assert:
+        that:
+          - (result["response"] | length) > 0
+          - item["poolName"] == "L3_VNI"
+          - item["scopeDetails"]["fabricName"] == "{{ ansible_it_fabric }}"
+      loop: "{{ result.response }}"
+
+    - name: Query Resources - filter by switch and pool name
+      cisco.nd.nd_manage_resource_manager:
+        <<: *nd_info
+        state: query
+        fabric: "{{ ansible_it_fabric }}"
+        config:
+          - pool_name: "LOOPBACK_ID"
+            switch:
+              - "{{ ansible_switch1 }}"
+          - pool_name: "VPC_ID"
+            switch:
+              - "{{ ansible_switch2 }}"
+      register: result
+
+    - name: Assert - Query by switch + pool name
+      ansible.builtin.assert:
+        that:
+          - (result["response"] | length) > 0
+          - item["poolName"] in ["LOOPBACK_ID", "VPC_ID"]
+      loop: "{{ result.response }}"
+
+    - name: Query Resources - mixed query
+      cisco.nd.nd_manage_resource_manager:
+        <<: *nd_info
+        state: query
+        fabric: "{{ ansible_it_fabric }}"
+        config:
+          - entity_name: "l2_vni_fabric"
+          - switch:
+              - "{{ ansible_switch1 }}"
+          - pool_name: "LOOPBACK_ID"
+          - pool_name: "VPC_ID"
+            switch:
+              - "{{ ansible_switch1 }}"
+      register: result
+
+    - name: Assert - Mixed query returns results
+      ansible.builtin.assert:
+        that:
+          - (result["response"] | length) != 0
+
+  always:
+
+    ##############################################
+    ##             CLEANUP                      ##
+    ##############################################
+
+    - name: Delete Resources (always cleanup)
+      cisco.nd.nd_manage_resource_manager:
+        <<: *nd_info
+        state: deleted
+        fabric: "{{ ansible_it_fabric }}"
+        config:
+          - entity_name: "l3_vni_fabric"
+            pool_type: "ID"
+            pool_name: "L3_VNI"
+            scope_type: "fabric"
+
+          - entity_name: "l2_vni_fabric"
+            pool_type: "ID"
+            pool_name: "L2_VNI"
+            scope_type: "fabric"
+
+          - entity_name: "loopback_dev"
+            pool_type: "ID"
+            pool_name: "LOOPBACK_ID"
+            scope_type: "device"
+            switch:
+              - "{{ ansible_switch1 }}"
+              - "{{ ansible_switch2 }}"
+
+          - entity_name: "{{ ansible_sno_1 }}~{{ ansible_sno_2 }}"
+            pool_type: "ID"
+            pool_name: "VPC_ID"
+            scope_type: "device_pair"
+            switch:
+              - "{{ ansible_switch1 }}"
+              - "{{ ansible_switch2 }}"
+
+          - entity_name: "mmudigon-2"
+            pool_type: "IP"
+            pool_name: "LOOPBACK0_IP_POOL"
+            scope_type: "fabric"
+
+          - entity_name: "{{ ansible_sno_1 }}~{{ intf_1_10 }}"
+            pool_type: "IP"
+            pool_name: "LOOPBACK1_IP_POOL"
+            scope_type: "device_interface"
+            switch:
+              - "{{ ansible_switch1 }}"
+
+          - entity_name: "{{ ansible_sno_1 }}~{{ intf_1_3 }}~{{ ansible_sno_2 }}~{{ intf_1_3 }}"
+            pool_type: "SUBNET"
+            pool_name: "SUBNET"
+            scope_type: "link"
+            switch:
+              - "{{ ansible_switch1 }}"

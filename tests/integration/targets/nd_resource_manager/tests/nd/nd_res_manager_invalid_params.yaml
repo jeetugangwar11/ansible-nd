@@ -1,0 +1,337 @@
+##############################################
+##   INVALID PARAMETER TESTS               ##
+##############################################
+
+# Re-define nd_info YAML anchor so *nd_info can be used in module args below.
+- name: Re-define nd_info anchor
+  ansible.builtin.set_fact:
+    nd_info: &nd_info
+      host:         "{{ nd_info.host | default(ansible_host) }}"
+      username:     "{{ nd_info.username | default(ansible_user) }}"
+      password:     "{{ nd_info.password | default(ansible_password) }}"
+      output_level: "{{ nd_info.output_level | default('normal') }}"
+
+- block:
+
+    ##############################################
+    ##      INVALID POOL TYPE                   ##
+    ##############################################
+
+    - name: Create Resources - Invalid Pool type
+      cisco.nd.nd_manage_resource_manager:
+        <<: *nd_info
+        state: merged
+        fabric: "{{ ansible_it_fabric }}"
+        config:
+          - entity_name: "l3_vni_fabric"
+            pool_type: "IDLE"                 # invalid: not ID / IP / SUBNET
+            pool_name: "L3_VNI"
+            scope_type: "fabric"
+            resource: "101"
+      ignore_errors: true
+      register: result
+
+    - name: Assert - Invalid pool type rejected
+      ansible.builtin.assert:
+        that:
+          - result.failed == true
+
+    ##############################################
+    ##      INVALID POOL NAME                   ##
+    ##############################################
+
+    - name: Create Resources - Invalid Pool Name
+      cisco.nd.nd_manage_resource_manager:
+        <<: *nd_info
+        state: merged
+        fabric: "{{ ansible_it_fabric }}"
+        config:
+          - entity_name: "l3_vni_fabric"
+            pool_type: "ID"
+            pool_name: "WRONG_POOL"           # invalid pool name
+            scope_type: "fabric"
+            resource: "101"
+      ignore_errors: true
+      register: result
+
+    - name: Assert - Invalid pool name rejected
+      ansible.builtin.assert:
+        that:
+          - result.failed == true
+          - '"not valid" in result["msg"]'
+
+    ##############################################
+    ##      WRONG SCOPE TYPE / POOL NAME        ##
+    ##############################################
+
+    - name: Create Resources - L3_VNI wrong scope type
+      cisco.nd.nd_manage_resource_manager:
+        <<: *nd_info
+        state: merged
+        fabric: "{{ ansible_it_fabric }}"
+        config:
+          - entity_name: "l3_vni_fabric"
+            pool_type: "ID"
+            pool_name: "L3_VNI"
+            scope_type: "device"              # L3_VNI requires fabric scope
+            resource: "102"
+      ignore_errors: true
+      register: result
+
+    - name: Assert - L3_VNI wrong scope type rejected
+      ansible.builtin.assert:
+        that:
+          - result.failed == true
+          - '"scope type" in result["msg"] or "scope_type" in result["msg"]'
+
+    - name: Create Resources - L2_VNI wrong scope type
+      cisco.nd.nd_manage_resource_manager:
+        <<: *nd_info
+        state: merged
+        fabric: "{{ ansible_it_fabric }}"
+        config:
+          - entity_name: "l2_vni_fabric"
+            pool_type: "ID"
+            pool_name: "L2_VNI"
+            scope_type: "device_interface"    # L2_VNI requires fabric scope
+            resource: "102"
+      ignore_errors: true
+      register: result
+
+    - name: Assert - L2_VNI wrong scope type rejected
+      ansible.builtin.assert:
+        that:
+          - result.failed == true
+
+    - name: Create Resources - LOOPBACK_ID wrong scope type
+      cisco.nd.nd_manage_resource_manager:
+        <<: *nd_info
+        state: merged
+        fabric: "{{ ansible_it_fabric }}"
+        config:
+          - entity_name: "loopback_dev"
+            pool_type: "ID"
+            pool_name: "LOOPBACK_ID"
+            scope_type: "link"                # LOOPBACK_ID requires device scope
+            switch:
+              - "{{ ansible_switch1 }}"
+              - "{{ ansible_switch2 }}"
+            resource: "200"
+      ignore_errors: true
+      register: result
+
+    - name: Assert - LOOPBACK_ID wrong scope type rejected
+      ansible.builtin.assert:
+        that:
+          - result.failed == true
+
+    - name: Create Resources - VPC_ID wrong scope type
+      cisco.nd.nd_manage_resource_manager:
+        <<: *nd_info
+        state: merged
+        fabric: "{{ ansible_it_fabric }}"
+        config:
+          - entity_name: "{{ ansible_sno_1 }}~{{ ansible_sno_2 }}"
+            pool_type: "ID"
+            pool_name: "VPC_ID"
+            scope_type: "fabric"              # VPC_ID requires device_pair scope
+            switch:
+              - "{{ ansible_switch1 }}"
+              - "{{ ansible_switch2 }}"
+            resource: "500"
+      ignore_errors: true
+      register: result
+
+    - name: Assert - VPC_ID wrong scope type rejected
+      ansible.builtin.assert:
+        that:
+          - result.failed == true
+
+    - name: Create Resources - LOOPBACK0_IP_POOL wrong scope type
+      cisco.nd.nd_manage_resource_manager:
+        <<: *nd_info
+        state: merged
+        fabric: "{{ ansible_it_fabric }}"
+        config:
+          - entity_name: "mmudigon-2"
+            pool_type: "IP"
+            pool_name: "LOOPBACK0_IP_POOL"
+            scope_type: "link"                # IP pools require fabric or device_interface
+            resource: "110.1.1.1"
+      ignore_errors: true
+      register: result
+
+    - name: Assert - LOOPBACK0_IP_POOL wrong scope type rejected
+      ansible.builtin.assert:
+        that:
+          - result.failed == true
+
+    - name: Create Resources - LOOPBACK1_IP_POOL wrong scope type
+      cisco.nd.nd_manage_resource_manager:
+        <<: *nd_info
+        state: merged
+        fabric: "{{ ansible_it_fabric }}"
+        config:
+          - entity_name: "{{ ansible_sno_1 }}~{{ intf_1_10 }}"
+            pool_type: "IP"
+            pool_name: "LOOPBACK1_IP_POOL"
+            scope_type: "device"              # IP pool requires fabric or device_interface
+            switch:
+              - "{{ ansible_switch1 }}"
+            resource: "fe:80::04"
+      ignore_errors: true
+      register: result
+
+    - name: Assert - LOOPBACK1_IP_POOL wrong scope type rejected
+      ansible.builtin.assert:
+        that:
+          - result.failed == true
+
+    - name: Create Resources - SUBNET wrong scope type
+      cisco.nd.nd_manage_resource_manager:
+        <<: *nd_info
+        state: merged
+        fabric: "{{ ansible_it_fabric }}"
+        config:
+          - entity_name: "{{ ansible_sno_1 }}~{{ intf_1_3 }}~{{ ansible_sno_2 }}~{{ intf_1_3 }}"
+            pool_type: "SUBNET"
+            pool_name: "SUBNET"
+            scope_type: "fabric"              # SUBNET requires link scope
+            resource: "fe:80:05::05/64"
+      ignore_errors: true
+      register: result
+
+    - name: Assert - SUBNET wrong scope type rejected
+      ansible.builtin.assert:
+        that:
+          - result.failed == true
+
+    ##############################################
+    ##      MISSING MANDATORY PARAMETERS        ##
+    ##############################################
+
+    - name: Create Resources - Missing switch for device scope
+      cisco.nd.nd_manage_resource_manager:
+        <<: *nd_info
+        state: merged
+        fabric: "{{ ansible_it_fabric }}"
+        config:
+          - entity_name: "loopback_dev"
+            pool_type: "ID"
+            pool_name: "LOOPBACK_ID"
+            scope_type: "device"
+            resource: "200"
+            # switch is missing
+      ignore_errors: true
+      register: result
+
+    - name: Assert - Missing switch for device scope rejected
+      ansible.builtin.assert:
+        that:
+          - result.failed == true
+          - '"switch" in result["msg"]'
+
+    - name: Merged - Missing pool_type
+      cisco.nd.nd_manage_resource_manager:
+        <<: *nd_info
+        state: merged
+        fabric: "{{ ansible_it_fabric }}"
+        config:
+          - entity_name: "l3_vni_fabric"
+            pool_name: "L3_VNI"
+            scope_type: "fabric"
+            resource: "101"
+      ignore_errors: true
+      register: result
+
+    - name: Assert - Missing pool_type rejected
+      ansible.builtin.assert:
+        that:
+          - result.failed == true
+          - '"pool_type" in result["msg"]'
+
+    - name: Merged - Missing pool_name
+      cisco.nd.nd_manage_resource_manager:
+        <<: *nd_info
+        state: merged
+        fabric: "{{ ansible_it_fabric }}"
+        config:
+          - entity_name: "l3_vni_fabric"
+            pool_type: "ID"
+            scope_type: "fabric"
+            resource: "101"
+      ignore_errors: true
+      register: result
+
+    - name: Assert - Missing pool_name rejected
+      ansible.builtin.assert:
+        that:
+          - result.failed == true
+          - '"pool_name" in result["msg"]'
+
+    - name: Merged - Missing scope_type
+      cisco.nd.nd_manage_resource_manager:
+        <<: *nd_info
+        state: merged
+        fabric: "{{ ansible_it_fabric }}"
+        config:
+          - entity_name: "l3_vni_fabric"
+            pool_type: "ID"
+            pool_name: "L3_VNI"
+            resource: "101"
+      ignore_errors: true
+      register: result
+
+    - name: Assert - Missing scope_type rejected
+      ansible.builtin.assert:
+        that:
+          - result.failed == true
+          - '"scope_type" in result["msg"]'
+
+    - name: Deleted - Missing scope_type
+      cisco.nd.nd_manage_resource_manager:
+        <<: *nd_info
+        state: deleted
+        fabric: "{{ ansible_it_fabric }}"
+        config:
+          - entity_name: "l3_vni_fabric"
+      ignore_errors: true
+      register: result
+
+    - name: Assert - Missing scope_type in deleted rejected
+      ansible.builtin.assert:
+        that:
+          - result.failed == true
+          - '"scope_type" in result["msg"]'
+
+    ##############################################
+    ##      CONFIG REQUIRED FOR MERGED/DELETED  ##
+    ##############################################
+
+    - name: Merged - No config provided
+      cisco.nd.nd_manage_resource_manager:
+        <<: *nd_info
+        state: merged
+        fabric: "{{ ansible_it_fabric }}"
+      ignore_errors: true
+      register: result
+
+    - name: Assert - Config required for merged
+      ansible.builtin.assert:
+        that:
+          - result.failed == true
+          - '"config" in result["msg"]'
+
+    - name: Deleted - No config provided
+      cisco.nd.nd_manage_resource_manager:
+        <<: *nd_info
+        state: deleted
+        fabric: "{{ ansible_it_fabric }}"
+      ignore_errors: true
+      register: result
+
+    - name: Assert - Config required for deleted
+      ansible.builtin.assert:
+        that:
+          - result.failed == true
+          - '"config" in result["msg"]'

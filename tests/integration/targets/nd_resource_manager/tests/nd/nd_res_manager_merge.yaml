@@ -1,0 +1,395 @@
+##############################################
+##               SETUP                      ##
+##############################################
+
+# Re-define nd_info YAML anchor so *nd_info can be used in module args below.
+# The nd_info Ansible variable is passed in via include_tasks vars: from main.yml.
+- name: Re-define nd_info anchor
+  ansible.builtin.set_fact:
+    nd_info: &nd_info
+      host:         "{{ nd_info.host | default(ansible_host) }}"
+      username:     "{{ nd_info.username | default(ansible_user) }}"
+      password:     "{{ nd_info.password | default(ansible_password) }}"
+      output_level: "{{ nd_info.output_level | default('normal') }}"
+
+- name: Delete Resources (cleanup before tests)
+  cisco.nd.nd_manage_resource_manager: &rm_delete
+    <<: *nd_info
+    state: deleted
+    fabric: "{{ ansible_it_fabric }}"
+    config:
+      - entity_name: "l3_vni_fabric"
+        pool_type: "ID"
+        pool_name: "L3_VNI"
+        scope_type: "fabric"
+
+      - entity_name: "l2_vni_fabric"
+        pool_type: "ID"
+        pool_name: "L2_VNI"
+        scope_type: "fabric"
+
+      - entity_name: "loopback_dev"
+        pool_type: "ID"
+        pool_name: "LOOPBACK_ID"
+        scope_type: "device"
+        switch:
+          - "{{ ansible_switch1 }}"
+          - "{{ ansible_switch2 }}"
+
+      - entity_name: "{{ ansible_sno_1 }}~{{ ansible_sno_2 }}"
+        pool_type: "ID"
+        pool_name: "VPC_ID"
+        scope_type: "device_pair"
+        switch:
+          - "{{ ansible_switch1 }}"
+          - "{{ ansible_switch2 }}"
+
+      - entity_name: "mmudigon-2"
+        pool_type: "IP"
+        pool_name: "LOOPBACK0_IP_POOL"
+        scope_type: "fabric"
+
+      - entity_name: "{{ ansible_sno_1 }}~{{ intf_1_10 }}"
+        pool_type: "IP"
+        pool_name: "LOOPBACK1_IP_POOL"
+        scope_type: "device_interface"
+        switch:
+          - "{{ ansible_switch1 }}"
+
+      - entity_name: "{{ ansible_sno_1 }}~{{ intf_1_3 }}~{{ ansible_sno_2 }}~{{ intf_1_3 }}"
+        pool_type: "SUBNET"
+        pool_name: "SUBNET"
+        scope_type: "link"
+        switch:
+          - "{{ ansible_switch1 }}"
+  register: result
+
+- name: Assert - Cleanup succeeded (HTTP 200 or no resources to delete)
+  ansible.builtin.assert:
+    that:
+      - result.changed == false or (result["response"] | length) >= 0
+
+- block:
+
+    ##############################################
+    ##                MERGE                     ##
+    ##############################################
+
+    - name: Create Resources
+      cisco.nd.nd_manage_resource_manager: &rm_merge
+        <<: *nd_info
+        state: merged
+        fabric: "{{ ansible_it_fabric }}"
+        config:
+          - entity_name: "l3_vni_fabric"
+            pool_type: "ID"
+            pool_name: "L3_VNI"
+            scope_type: "fabric"
+            resource: "101"
+
+          - entity_name: "l2_vni_fabric"
+            pool_type: "ID"
+            pool_name: "L2_VNI"
+            scope_type: "fabric"
+            resource: "102"
+
+          - entity_name: "loopback_dev"
+            pool_type: "ID"
+            pool_name: "LOOPBACK_ID"
+            scope_type: "device"
+            switch:
+              - "{{ ansible_switch1 }}"
+              - "{{ ansible_switch2 }}"
+            resource: "200"
+
+          - entity_name: "{{ ansible_sno_1 }}~{{ ansible_sno_2 }}"
+            pool_type: "ID"
+            pool_name: "VPC_ID"
+            scope_type: "device_pair"
+            switch:
+              - "{{ ansible_switch1 }}"
+              - "{{ ansible_switch2 }}"
+            resource: "500"
+
+          - entity_name: "mmudigon-2"
+            pool_type: "IP"
+            pool_name: "LOOPBACK0_IP_POOL"
+            scope_type: "fabric"
+            resource: "110.1.1.1"
+
+          - entity_name: "{{ ansible_sno_1 }}~{{ intf_1_10 }}"
+            pool_type: "IP"
+            pool_name: "LOOPBACK1_IP_POOL"
+            scope_type: "device_interface"
+            switch:
+              - "{{ ansible_switch1 }}"
+            resource: "fe:80::04"
+
+          - entity_name: "{{ ansible_sno_1 }}~{{ intf_1_3 }}~{{ ansible_sno_2 }}~{{ intf_1_3 }}"
+            pool_type: "SUBNET"
+            pool_name: "SUBNET"
+            scope_type: "link"
+            switch:
+              - "{{ ansible_switch1 }}"
+            resource: "fe:80:0505::05/64"
+      register: result
+
+    - name: Assert - Create Resources changed
+      ansible.builtin.assert:
+        that:
+          - result.changed == true
+          - (result["diff"][0]["merged"] | length) == 9
+          - (result["diff"][0]["deleted"] | length) == 0
+          - (result["response"] | length) == 9
+
+    - name: Assert - Create Resources HTTP 200
+      ansible.builtin.assert:
+        that:
+          - 'item["RETURN_CODE"] == 200'
+      loop: "{{ result.response }}"
+
+    ##############################################
+    ##                IDEMPOTENCE               ##
+    ##############################################
+
+    - name: Create Resources - Idempotence
+      cisco.nd.nd_manage_resource_manager: *rm_merge
+      register: result
+
+    - name: Assert - Idempotence (no changes)
+      ansible.builtin.assert:
+        that:
+          - result.changed == false
+          - (result["diff"][0]["merged"] | length) == 0
+          - (result["diff"][0]["deleted"] | length) == 0
+
+    ##############################################
+    ##       MODIFY EXISTING RESOURCES          ##
+    ##############################################
+
+    - name: Modify Resources
+      cisco.nd.nd_manage_resource_manager:
+        <<: *nd_info
+        state: merged
+        fabric: "{{ ansible_it_fabric }}"
+        config:
+          - entity_name: "l3_vni_fabric"
+            pool_type: "ID"
+            pool_name: "L3_VNI"
+            scope_type: "fabric"
+            resource: "1001"
+
+          - entity_name: "l2_vni_fabric"
+            pool_type: "ID"
+            pool_name: "L2_VNI"
+            scope_type: "fabric"
+            resource: "1002"
+
+          - entity_name: "loopback_dev"
+            pool_type: "ID"
+            pool_name: "LOOPBACK_ID"
+            scope_type: "device"
+            switch:
+              - "{{ ansible_switch1 }}"
+              - "{{ ansible_switch2 }}"
+            resource: "1003"
+
+          - entity_name: "{{ ansible_sno_1 }}~{{ ansible_sno_2 }}"
+            pool_type: "ID"
+            pool_name: "VPC_ID"
+            scope_type: "device_pair"
+            switch:
+              - "{{ ansible_switch1 }}"
+              - "{{ ansible_switch2 }}"
+            resource: "1005"
+
+          - entity_name: "mmudigon-2"
+            pool_type: "IP"
+            pool_name: "LOOPBACK0_IP_POOL"
+            scope_type: "fabric"
+            resource: "111.1.1.1"
+
+          - entity_name: "{{ ansible_sno_1 }}~{{ intf_1_10 }}"
+            pool_type: "IP"
+            pool_name: "LOOPBACK1_IP_POOL"
+            scope_type: "device_interface"
+            switch:
+              - "{{ ansible_switch1 }}"
+            resource: "fe:81::04"
+
+          - entity_name: "{{ ansible_sno_1 }}~{{ intf_1_3 }}~{{ ansible_sno_2 }}~{{ intf_1_3 }}"
+            pool_type: "SUBNET"
+            pool_name: "SUBNET"
+            scope_type: "link"
+            switch:
+              - "{{ ansible_switch1 }}"
+            resource: "fe:81:0505::05/64"
+      register: result
+
+    - name: Assert - Modify Resources changed
+      ansible.builtin.assert:
+        that:
+          - result.changed == true
+          - (result["diff"][0]["merged"] | length) == 9
+          - (result["diff"][0]["deleted"] | length) == 0
+          - (result["response"] | length) == 9
+
+    - name: Assert - Modify Resources HTTP 200
+      ansible.builtin.assert:
+        that:
+          - 'item["RETURN_CODE"] == 200'
+      loop: "{{ result.response }}"
+
+    ##############################################
+    ##       MERGE - MISSING PARAMS             ##
+    ##############################################
+
+    - name: Create Resources - Missing switch info
+      cisco.nd.nd_manage_resource_manager:
+        <<: *nd_info
+        state: merged
+        fabric: "{{ ansible_it_fabric }}"
+        config:
+          - entity_name: "loopback_dev"
+            pool_type: "ID"
+            pool_name: "LOOPBACK_ID"
+            scope_type: "device"
+            resource: "200"
+      register: result
+      ignore_errors: true
+
+    - name: Assert - Missing switch detected
+      ansible.builtin.assert:
+        that:
+          - '"switch" in result["msg"]'
+
+    - name: Create Resources - Missing scope_type
+      cisco.nd.nd_manage_resource_manager:
+        <<: *nd_info
+        state: merged
+        fabric: "{{ ansible_it_fabric }}"
+        config:
+          - entity_name: "loopback_dev"
+            pool_type: "ID"
+            pool_name: "LOOPBACK_ID"
+            resource: "200"
+      register: result
+      ignore_errors: true
+
+    - name: Assert - Missing scope_type detected
+      ansible.builtin.assert:
+        that:
+          - '"scope_type" in result["msg"]'
+
+    ##############################################
+    ##             DELETE                       ##
+    ##############################################
+
+    - name: Delete Resources
+      cisco.nd.nd_manage_resource_manager: *rm_delete
+      register: result
+
+    - name: Assert - Delete Resources changed
+      ansible.builtin.assert:
+        that:
+          - result.changed == true
+          - (result["diff"][0]["merged"] | length) == 0
+          - (result["diff"][0]["deleted"] | length) == 9
+          - (result["response"] | length) == 1
+
+    - name: Assert - Delete Resources HTTP 200
+      ansible.builtin.assert:
+        that:
+          - 'item["RETURN_CODE"] == 200'
+      loop: "{{ result.response }}"
+
+    ##############################################
+    ##          IDEMPOTENT DELETE               ##
+    ##############################################
+
+    - name: Delete Resources - Idempotence
+      cisco.nd.nd_manage_resource_manager: *rm_delete
+      register: result
+
+    - name: Assert - Idempotent delete (no changes)
+      ansible.builtin.assert:
+        that:
+          - result.changed == false
+          - (result["diff"][0]["merged"] | length) == 0
+          - (result["diff"][0]["deleted"] | length) == 0
+
+    ##############################################
+    ##        MISSING PARAMS IN DELETE          ##
+    ##############################################
+
+    - name: Delete Resources - scope_type missing
+      cisco.nd.nd_manage_resource_manager:
+        <<: *nd_info
+        state: deleted
+        fabric: "{{ ansible_it_fabric }}"
+        config:
+          - entity_name: "l3_vni_fabric"
+      register: result
+      ignore_errors: true
+
+    - name: Assert - scope_type required for delete
+      ansible.builtin.assert:
+        that:
+          - '"scope_type" in result["msg"]'
+
+  always:
+
+    ##############################################
+    ##             CLEANUP                      ##
+    ##############################################
+
+    - name: Delete Resources (always cleanup)
+      cisco.nd.nd_manage_resource_manager:
+        <<: *nd_info
+        state: deleted
+        fabric: "{{ ansible_it_fabric }}"
+        config:
+          - entity_name: "l3_vni_fabric"
+            pool_type: "ID"
+            pool_name: "L3_VNI"
+            scope_type: "fabric"
+
+          - entity_name: "l2_vni_fabric"
+            pool_type: "ID"
+            pool_name: "L2_VNI"
+            scope_type: "fabric"
+
+          - entity_name: "loopback_dev"
+            pool_type: "ID"
+            pool_name: "LOOPBACK_ID"
+            scope_type: "device"
+            switch:
+              - "{{ ansible_switch1 }}"
+              - "{{ ansible_switch2 }}"
+
+          - entity_name: "{{ ansible_sno_1 }}~{{ ansible_sno_2 }}"
+            pool_type: "ID"
+            pool_name: "VPC_ID"
+            scope_type: "device_pair"
+            switch:
+              - "{{ ansible_switch1 }}"
+              - "{{ ansible_switch2 }}"
+
+          - entity_name: "mmudigon-2"
+            pool_type: "IP"
+            pool_name: "LOOPBACK0_IP_POOL"
+            scope_type: "fabric"
+
+          - entity_name: "{{ ansible_sno_1 }}~{{ intf_1_10 }}"
+            pool_type: "IP"
+            pool_name: "LOOPBACK1_IP_POOL"
+            scope_type: "device_interface"
+            switch:
+              - "{{ ansible_switch1 }}"
+
+          - entity_name: "{{ ansible_sno_1 }}~{{ intf_1_3 }}~{{ ansible_sno_2 }}~{{ intf_1_3 }}"
+            pool_type: "SUBNET"
+            pool_name: "SUBNET"
+            scope_type: "link"
+            switch:
+              - "{{ ansible_switch1 }}"

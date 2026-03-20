@@ -1,0 +1,43 @@
+# Integration test entry point for nd_resource_manager_with_smart_endpoint
+# Copyright: (c) 2026 Cisco and/or its affiliates.
+# GNU General Public License v3.0+ (see LICENSE or https://www.gnu.org/licenses/gpl-3.0.txt)
+
+- name: Test that we have a Nexus Dashboard host, username and password
+  ansible.builtin.fail:
+    msg: "Please define the following variables: ansible_host, ansible_user and ansible_password."
+  when: ansible_host is not defined or ansible_user is not defined or ansible_password is not defined
+
+- name: Set common ND connection info
+  ansible.builtin.set_fact:
+    nd_info: &nd_info
+      host: "{{ ansible_host }}"
+      username: "{{ ansible_user }}"
+      password: "{{ ansible_password }}"
+      output_level: '{{ nd_output_level | default("debug") }}'
+
+##############################################
+##   MERGE TESTS                            ##
+##############################################
+
+- name: Run merge tests
+  ansible.builtin.include_tasks: "{{ role_path }}/tests/dcnm/dcnm_res_manager_merge.yaml"
+  vars:
+    nd_info: *nd_info
+
+##############################################
+##   QUERY TESTS                            ##
+##############################################
+
+- name: Run query tests
+  ansible.builtin.include_tasks: "{{ role_path }}/tests/dcnm/dcnm_res_manager_query.yaml"
+  vars:
+    nd_info: *nd_info
+
+##############################################
+##   INVALID PARAMS TESTS                   ##
+##############################################
+
+- name: Run invalid params tests
+  ansible.builtin.include_tasks: "{{ role_path }}/tests/dcnm/dcnm_res_manager_invalid_params.yaml"
+  vars:
+    nd_info: *nd_info
