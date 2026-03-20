@@ -192,8 +192,10 @@ after:
 """
 
 import ipaddress
+import logging
 
 from ansible.module_utils.basic import AnsibleModule
+from ansible_collections.cisco.nd.plugins.module_utils.common.log import Log
 from ansible_collections.cisco.nd.plugins.module_utils.nd_v2 import (
     NDModule,
     NDModuleError,
@@ -269,7 +271,7 @@ class NDResourceManagerModule:
     def __init__(self, module, nd, logger=None):
         self.module = module
         self.nd = nd
-        self.log = logger
+        self.log = logger if logger is not None else logging.getLogger(__name__)
 
         self.fabric = module.params["fabric"]
         self.state = module.params["state"]
@@ -283,6 +285,11 @@ class NDResourceManagerModule:
         self._all_resources = []
         self._resources_fetched = False
 
+        self.log.info(
+            f"NDResourceManagerModule initialized: fabric={self.fabric}, "
+            f"state={self.state}, config_count={len(self.config)}"
+        )
+
     # ------------------------------------------------------------------
     # Input validation
     # ------------------------------------------------------------------
@@ -293,6 +300,11 @@ class NDResourceManagerModule:
         pool_name = item.get("pool_name")
         scope_type = item.get("scope_type")
 
+        self.log.debug(
+            f"Validating resource params: pool_type={pool_type}, "
+            f"pool_name={pool_name}, scope_type={scope_type}"
+        )
+
         if pool_type == "ID":
             check_key = pool_name
         elif pool_type == "IP":
@@ -300,31 +312,46 @@ class NDResourceManagerModule:
         elif pool_type == "SUBNET":
             check_key = "SUBNET"
         else:
-            return (
-                False,
+            msg = (
                 "Given pool type = '{0}' is invalid,"
-                " Allowed pool types = ['ID', 'IP', 'SUBNET']".format(pool_type),
+                " Allowed pool types = ['ID', 'IP', 'SUBNET']".format(pool_type)
             )
+            self.log.warning(f"Validation failed: {msg}")
+            return False, msg
 
         allowed_scopes = _POOLNAME_TO_SCOPE_TYPE.get(check_key)
         if allowed_scopes is None:
-            return False, "Given pool name '{0}' is not valid".format(pool_name)
+            msg = "Given pool name '{0}' is not valid".format(pool_name)
+            self.log.warning(f"Validation failed: {msg}")
+            return False, msg
 
         if scope_type not in allowed_scopes:
-            return (
-                False,
+            msg = (
                 "Given scope type '{0}' is not valid for pool name = '{1}',"
                 " Allowed scope_types = {2}".format(
                     scope_type, pool_name, allowed_scopes
-                ),
+                )
             )
+            self.log.warning(f"Validation failed: {msg}")
+            return False, msg
 
+        self.log.debug(
+            f"Validation passed: pool_name={pool_name}, scope_type={scope_type}, "
+            f"allowed_scopes={allowed_scopes}"
+        )
         return True, ""
 
     def _validate_input(self):
         """Validate playbook config fields based on the current state."""
+        self.log.info(
+            f"Validating input: state={self.state}, config_count={len(self.config)}"
+        )
+
         if not self.config:
             if self.state in ("merged", "deleted"):
+                self.log.error(
+                    f"'config' is mandatory for state '{self.state}' but was not provided"
+                )
                 self.module.fail_json(
                     msg="'config' element is mandatory for state '{0}'".format(
                         self.state
@@ -367,7 +394,13 @@ class NDResourceManagerModule:
     def _get_all_resources(self):
         """Fetch all resources for the fabric once and cache them."""
         if self._resources_fetched:
+            self.log.debug(
+                f"Resources already cached for fabric={self.fabric}: "
+                f"{len(self._all_resources)} resource(s)"
+            )
             return
+
+        self.log.info(f"Fetching all resources for fabric={self.fabric}")
 
         ep = EpManageFabricResourcesGet(fabric_name=self.fabric)
         try:
@@ -375,6 +408,9 @@ class NDResourceManagerModule:
         except NDModuleError as exc:
             if exc.status == 404:
                 # Fabric has no resources yet — that is valid
+                self.log.info(
+                    f"No resources found (404) for fabric={self.fabric}, treating as empty"
+                )
                 self._resources_fetched = True
                 return
             raise
@@ -397,6 +433,9 @@ class NDResourceManagerModule:
                 self._all_resources.append(raw)
 
         self._resources_fetched = True
+        self.log.info(
+            f"Fetched {len(self._all_resources)} resource(s) for fabric={self.fabric}"
+        )
 
     # ------------------------------------------------------------------
     # Resource attribute accessors (handle both ResourceModel and raw dict)
@@ -501,6 +540,10 @@ class NDResourceManagerModule:
         self, entity_name, pool_name, scope_type, switch_ip=None
     ):
         """Find cached resources matching the given criteria."""
+        self.log.debug(
+            f"Finding matching resources: entity_name={entity_name}, "
+            f"pool_name={pool_name}, scope_type={scope_type}, switch_ip={switch_ip}"
+        )
         results = []
         for res in self._all_resources:
             res_entity = self._get_entity_name(res)
@@ -521,6 +564,11 @@ class NDResourceManagerModule:
                     continue
 
             results.append(res)
+
+        self.log.debug(
+            f"Found {len(results)} matching resource(s) for entity_name={entity_name}, "
+            f"pool_name={pool_name}, scope_type={scope_type}, switch_ip={switch_ip}"
+        )
         return results
 
     # ------------------------------------------------------------------
@@ -529,20 +577,32 @@ class NDResourceManagerModule:
 
     def _build_scope_details(self, scope_type, switch_ip=None):
         """Build the scopeDetails dict for the ND Manage API."""
+        self.log.debug(
+            f"Building scope details: scope_type={scope_type}, "
+            f"switch_ip={switch_ip}, fabric={self.fabric}"
+        )
         api_scope = _SCOPE_TYPE_TO_API[scope_type]
 
         if scope_type == "fabric":
-            return {
+            result = {
                 "scopeType": api_scope,
                 "fabricName": self.fabric,
             }
-        return {
-            "scopeType": api_scope,
-            "switchIp": switch_ip,
-        }
+        else:
+            result = {
+                "scopeType": api_scope,
+                "switchIp": switch_ip,
+            }
+        self.log.debug(f"Scope details built: {result}")
+        return result
 
     def _build_create_payload(self, item, switch_ip=None):
         """Build POST body for resource creation in ND Manage API format."""
+        self.log.debug(
+            f"Building create payload: pool_name={item['pool_name']}, "
+            f"entity_name={item['entity_name']}, scope_type={item['scope_type']}, "
+            f"switch_ip={switch_ip}, resource={item.get('resource')}"
+        )
         resource_value = item.get("resource")
         payload = {
             "poolName": item["pool_name"],
@@ -552,6 +612,7 @@ class NDResourceManagerModule:
         }
         if resource_value is not None:
             payload["resourceValue"] = str(resource_value)
+        self.log.debug(f"Create payload built: {payload}")
         return payload
 
     # ------------------------------------------------------------------
@@ -560,6 +621,10 @@ class NDResourceManagerModule:
 
     def manage_merged(self):
         """Create resources that don't exist or have a different value."""
+        self.log.info(
+            f"manage_merged: Processing {len(self.config)} config item(s) "
+            f"for fabric={self.fabric}"
+        )
         self._get_all_resources()
 
         for item in self.config:
@@ -572,6 +637,12 @@ class NDResourceManagerModule:
             if scope_type == "fabric":
                 switches = [None]
 
+            self.log.debug(
+                f"manage_merged: Processing item: entity_name={entity_name}, "
+                f"pool_name={pool_name}, scope_type={scope_type}, "
+                f"resource_value={resource_value}, switches={switches}"
+            )
+
             for sw in switches:
                 matches = self._find_matching_resources(
                     entity_name, pool_name, scope_type, switch_ip=sw
@@ -581,15 +652,29 @@ class NDResourceManagerModule:
                     existing_value = self._get_resource_value(matches[0])
                     if self._compare_resource_values(existing_value, resource_value):
                         # Already exists with the same value — idempotent, skip
+                        self.log.debug(
+                            f"Resource already exists with the same value, skipping "
+                            f"(idempotent): entity_name={entity_name}, "
+                            f"pool_name={pool_name}, scope_type={scope_type}, "
+                            f"switch_ip={sw}, existing_value={existing_value}"
+                        )
                         continue
 
                 payload = self._build_create_payload(item, switch_ip=sw)
 
                 if self.module.check_mode:
+                    self.log.info(
+                        f"Check mode: would create resource: entity_name={entity_name}, "
+                        f"pool_name={pool_name}, scope_type={scope_type}, switch_ip={sw}"
+                    )
                     self.changed_dict[0]["merged"].append(payload)
                     self.api_responses.append({"RETURN_CODE": 200, "DATA": payload})
                     continue
 
+                self.log.info(
+                    f"Creating resource: entity_name={entity_name}, "
+                    f"pool_name={pool_name}, scope_type={scope_type}, switch_ip={sw}"
+                )
                 ep = EpManageFabricResourcesPost(fabric_name=self.fabric)
                 # API expects {"resources": [<resource_object>]}
                 resp_data = self.nd.request(
@@ -604,9 +689,17 @@ class NDResourceManagerModule:
                     )
                 else:
                     self.api_responses.append({"RETURN_CODE": 200, "DATA": resp_data})
+                self.log.info(
+                    f"Resource created successfully: entity_name={entity_name}, "
+                    f"pool_name={pool_name}, scope_type={scope_type}, switch_ip={sw}"
+                )
 
     def manage_deleted(self):
         """Remove resources that exist in the fabric inventory."""
+        self.log.info(
+            f"manage_deleted: Processing {len(self.config)} config item(s) "
+            f"for fabric={self.fabric}"
+        )
         self._get_all_resources()
 
         resource_ids = []
@@ -620,6 +713,11 @@ class NDResourceManagerModule:
             if scope_type == "fabric":
                 switches = [None]
 
+            self.log.debug(
+                f"manage_deleted: Processing item: entity_name={entity_name}, "
+                f"pool_name={pool_name}, scope_type={scope_type}, switches={switches}"
+            )
+
             for sw in switches:
                 matches = self._find_matching_resources(
                     entity_name, pool_name, scope_type, switch_ip=sw
@@ -631,11 +729,23 @@ class NDResourceManagerModule:
 
         if not resource_ids:
             # Nothing to delete — idempotent
+            self.log.info(
+                f"manage_deleted: No matching resources found to delete "
+                f"for fabric={self.fabric}, nothing to do"
+            )
             return
+
+        self.log.info(
+            f"manage_deleted: Collected {len(resource_ids)} resource ID(s) "
+            f"to delete: {resource_ids}"
+        )
 
         self.changed_dict[0]["deleted"].extend(str(r) for r in resource_ids)
 
         if self.module.check_mode:
+            self.log.info(
+                f"Check mode: would delete {len(resource_ids)} resource(s): {resource_ids}"
+            )
             self.api_responses.append(
                 {"RETURN_CODE": 200, "DATA": {"resourceIds": resource_ids}}
             )
@@ -645,14 +755,27 @@ class NDResourceManagerModule:
         remove_req = RemoveResourcesByIdsRequest(resource_ids=resource_ids)
         resp_data = self.nd.request(ep.path, ep.verb, data=remove_req.to_payload())
         self.api_responses.append({"RETURN_CODE": 200, "DATA": resp_data})
+        self.log.info(
+            f"manage_deleted: Successfully deleted {len(resource_ids)} resource(s): "
+            f"{resource_ids}"
+        )
 
     def manage_query(self):
         """Return resources filtered by config criteria (or all resources if no config)."""
+        config_count = len(self.config) if self.config else 0
+        self.log.info(
+            f"manage_query: Querying resources for fabric={self.fabric}, "
+            f"filter_count={config_count}"
+        )
         self._get_all_resources()
 
         if not self.config:
             # No filters — return everything
             results = [self._to_dict(r) for r in self._all_resources]
+            self.log.info(
+                f"manage_query: No filter criteria provided, "
+                f"returning all {len(results)} resource(s)"
+            )
             self.changed_dict[0]["query"].extend(results)
             self.api_responses.extend(results)
             return
@@ -664,6 +787,11 @@ class NDResourceManagerModule:
             filter_entity = filter_item.get("entity_name")
             filter_pool = filter_item.get("pool_name")
             filter_switches = filter_item.get("switch") or []
+
+            self.log.debug(
+                f"manage_query: Applying filter: entity_name={filter_entity}, "
+                f"pool_name={filter_pool}, switches={filter_switches}"
+            )
 
             for res in self._all_resources:
                 rid = self._get_resource_id(res)
@@ -695,6 +823,9 @@ class NDResourceManagerModule:
                 if rid is not None:
                     seen_ids.add(rid)
 
+        self.log.info(
+            f"manage_query: Query complete, {len(results)} resource(s) matched filters"
+        )
         self.changed_dict[0]["query"].extend(results)
         self.api_responses.extend(results)
 
@@ -704,6 +835,7 @@ class NDResourceManagerModule:
 
     def manage_state(self):
         """Validate input and dispatch to the appropriate state handler."""
+        self.log.info(f"manage_state: Dispatching to state handler: state={self.state}")
         self._validate_input()
 
         if self.state == "merged":
@@ -713,6 +845,8 @@ class NDResourceManagerModule:
         elif self.state == "query":
             self.manage_query()
 
+        self.log.info(f"manage_state: State handler completed for state={self.state}")
+
     def exit_module(self):
         """Build and emit module output using NDOutput with DCNM-compatible extras."""
         changed = (
@@ -721,6 +855,13 @@ class NDResourceManagerModule:
         )
         if self.module.check_mode:
             changed = False
+
+        self.log.info(
+            f"exit_module: merged={len(self.changed_dict[0]['merged'])}, "
+            f"deleted={len(self.changed_dict[0]['deleted'])}, "
+            f"query={len(self.changed_dict[0]['query'])}, "
+            f"changed={changed}, check_mode={self.module.check_mode}"
+        )
 
         output_level = self.module.params.get("output_level", "normal")
         nd_output = NDOutput(output_level=output_level)
@@ -778,7 +919,17 @@ def main():
         supports_check_mode=True,
     )
 
+    # Initialize logging — always get a logger; configure file output if config is available
+    log = logging.getLogger("nd.nd_manage_resource_manager")
+    try:
+        log_config = Log()
+        log_config.config = "/Users/jeeram/ansible/collections/ansible_collections/cisco/nd/plugins/module_utils/logging_config.json"
+        log_config.commit()
+    except (ValueError, Exception):
+        pass
+
     state = module.params.get("state")
+    fabric = module.params.get("fabric")
     config = module.params.get("config")
 
     # Validate that config is provided for states that require it
@@ -790,12 +941,19 @@ def main():
         )
 
     try:
+        log.info(
+            f"Starting nd_manage_resource_manager module: fabric={fabric}, state={state}"
+        )
         nd = NDModule(module)
-        rm_module = NDResourceManagerModule(module=module, nd=nd)
+        log.info("NDModule initialized successfully")
+        rm_module = NDResourceManagerModule(module=module, nd=nd, logger=log)
+        log.info(f"NDResourceManagerModule initialized for fabric: {fabric}")
         rm_module.manage_state()
+        log.info("State management completed successfully")
         rm_module.exit_module()
 
     except NDModuleError as error:
+        log.error(f"NDModule error: {error.msg}")
         module.fail_json(
             msg=error.msg,
             response=[
@@ -806,6 +964,7 @@ def main():
             ],
         )
     except Exception as error:
+        log.error(f"Unexpected error during module execution: {str(error)}")
         module.fail_json(msg=str(error))
 
 
