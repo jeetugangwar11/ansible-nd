@@ -703,47 +703,125 @@ class NDResourceManagerModule:
     # API payload builders
     # ------------------------------------------------------------------
 
-    def _build_scope_details(self, scope_type, switch_ip=None):
-        """Build the scopeDetails dict for the ND Manage API."""
+    def _build_scope_details(self, scope_type, switch_ip=None, entity_name=None):
+        """Build the scopeDetails dict for the ND Manage API.
+
+        ``switch_ip`` is the translated switchId (serial number) of the source switch
+        from the playbook ``switch`` list.  The entity_name encodes the full topology
+        (src and dst) as tilde-separated fields — the server uses it to resolve
+        additional context, so we only need to supply srcSwitchId for multi-switch
+        scopes (device_pair, link) and let the server derive dst from entityName.
+
+          - fabric:           fabricName
+          - device:           switchId
+          - device_interface: switchId (= switch_ip) + interfaceName  (from entity SN~IF)
+          - device_pair:      srcSwitchId (= switch_ip)  — dst derived by server from entityName
+          - link:             srcSwitchId (= switch_ip)  — dst derived by server from entityName
+        """
         self.log.debug(
-            f"Building scope details: scope_type={scope_type}, "
-            f"switch_ip={switch_ip}, fabric={self.fabric}"
+            f"_build_scope_details: scope_type={scope_type}, switch_ip={switch_ip}, "
+            f"entity_name={entity_name}, fabric={self.fabric}"
         )
         api_scope = _SCOPE_TYPE_TO_API[scope_type]
 
         if scope_type == "fabric":
             self.log.debug(
-                f"_build_scope_details: building fabric-scope details: "
-                f"scopeType={api_scope}, fabricName={self.fabric}"
+                f"_build_scope_details: fabric scope -> fabricName={self.fabric}"
             )
             result = {
                 "scopeType": api_scope,
                 "fabricName": self.fabric,
             }
-        else:
+
+        elif scope_type == "device":
             self.log.debug(
-                f"_build_scope_details: building device-scope details: "
-                f"scopeType={api_scope}, switchId={switch_ip}"
+                f"_build_scope_details: device scope -> switchId={switch_ip}"
             )
             result = {
                 "scopeType": api_scope,
                 "switchId": switch_ip,
             }
-        self.log.debug(f"Scope details built: {result}")
+
+        elif scope_type == "device_interface":
+            # entity_name format: <serialNumber>~<interfaceName>
+            # switch_ip is already the translated switchId (serial number)
+            parts = (entity_name or "").split("~", 1)
+            if_name = parts[1] if len(parts) > 1 else None
+            self.log.debug(
+                f"_build_scope_details: device_interface scope -> "
+                f"switchId={switch_ip}, interfaceName={if_name} "
+                f"(interfaceName parsed from entity_name='{entity_name}')"
+            )
+            result = {"scopeType": api_scope, "switchId": switch_ip}
+            if if_name:
+                result["interfaceName"] = if_name
+            else:
+                self.log.warning(
+                    f"_build_scope_details: device_interface scope: could not parse "
+                    f"interfaceName from entity_name='{entity_name}'"
+                )
+
+        elif scope_type == "device_pair":
+            # switch_ip is the src switchId (serial number).
+            # dstSwitchId is intentionally omitted — the server derives the destination
+            # switch from entityName (format: <srcSN>~<dstSN>[~<label>]) to avoid a
+            # NullPointerException when the dst switch ID is not registered in ND Manage.
+            self.log.debug(
+                f"_build_scope_details: device_pair scope -> srcSwitchId={switch_ip} "
+                f"(dst derived by server from entityName='{entity_name}')"
+            )
+            result = {
+                "scopeType": api_scope,
+                "srcSwitchId": switch_ip,
+            }
+
+        elif scope_type == "link":
+            # switch_ip is the src switchId (serial number).
+            # dstSwitchId/dstInterfaceName are intentionally omitted — the server derives
+            # destination context from entityName (format: <srcSN>~<srcIF>~<dstSN>~<dstIF>).
+            parts = (entity_name or "").split("~")
+            src_if = parts[1] if len(parts) > 1 else None
+            self.log.debug(
+                f"_build_scope_details: link scope -> srcSwitchId={switch_ip}, "
+                f"srcInterfaceName={src_if} "
+                f"(dst derived by server from entityName='{entity_name}')"
+            )
+            result = {"scopeType": api_scope, "srcSwitchId": switch_ip}
+            if src_if:
+                result["srcInterfaceName"] = src_if
+
+        else:
+            self.log.warning(
+                f"_build_scope_details: unrecognised scope_type='{scope_type}', "
+                f"falling back to generic switchId payload"
+            )
+            result = {
+                "scopeType": api_scope,
+                "switchId": switch_ip,
+            }
+
+        self.log.debug(f"_build_scope_details: result={result}")
         return result
 
     def _build_create_payload(self, item, switch_ip=None):
         """Build POST body for resource creation in ND Manage API format."""
-        self.log.debug(
-            f"Building create payload: pool_name={item['pool_name']}, "
-            f"entity_name={item['entity_name']}, scope_type={item['scope_type']}, "
-            f"switch_ip={switch_ip}, resource={item.get('resource')}"
-        )
+        scope_type = item["scope_type"]
+        entity_name = item["entity_name"]
+        pool_name = item["pool_name"]
+        pool_type = item.get("pool_type")
         resource_value = item.get("resource")
+
+        self.log.debug(
+            f"_build_create_payload: pool_name={pool_name}, pool_type={pool_type}, "
+            f"entity_name={entity_name}, scope_type={scope_type}, "
+            f"switch_ip={switch_ip}, resource={resource_value}"
+        )
+
         payload = {
-            "poolName": item["pool_name"],
-            "entityName": item["entity_name"],
-            "scopeDetails": self._build_scope_details(item["scope_type"], switch_ip),
+            "poolName": pool_name,
+            "poolType": pool_type,
+            "entityName": entity_name,
+            "scopeDetails": self._build_scope_details(scope_type, switch_ip, entity_name=entity_name),
             "isPreAllocated": True,
         }
         if resource_value is not None:
@@ -755,7 +833,7 @@ class NDResourceManagerModule:
             self.log.debug(
                 "_build_create_payload: no resource value provided, omitting resourceValue field"
             )
-        self.log.debug(f"Create payload built: {payload}")
+        self.log.debug(f"_build_create_payload: final payload={payload}")
         return payload
 
 
