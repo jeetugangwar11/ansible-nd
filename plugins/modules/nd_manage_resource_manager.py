@@ -29,16 +29,17 @@ options:
   state:
     description:
       - The required state of the configuration after module completion.
+      - C(gathered) reads the current fabric resource and returns it in the
     type: str
     default: merged
     choices:
       - merged
       - deleted
-      - query
+      - gathered
   config:
     description:
       - A list of dictionaries containing resource configurations.
-      - Optional for state C(query) (returns all resources when omitted).
+      - Optional for state C(gathered) (returns all resources when omitted).
     type: list
     elements: dict
     suboptions:
@@ -135,31 +136,32 @@ EXAMPLES = """
         pool_name: "L3_VNI"
         scope_type: "fabric"
 
-- name: Query all resources
+- name: Gather all resources from fabric
   cisco.nd.nd_manage_resource_manager:
     fabric: my_fabric
-    state: query
+    state: gathered
+  register: result
 
-- name: Query resources by entity name
+- name: Gather resources by entity name
   cisco.nd.nd_manage_resource_manager:
     fabric: my_fabric
-    state: query
+    state: gathered
     config:
       - entity_name: "l3_vni_fabric"
       - entity_name: "loopback_dev"
 
-- name: Query resources by pool name
+- name: Gather resources by pool name
   cisco.nd.nd_manage_resource_manager:
     fabric: my_fabric
-    state: query
+    state: gathered
     config:
       - pool_name: "L3_VNI"
       - pool_name: "LOOPBACK_ID"
 
-- name: Query resources by switch
+- name: Gather resources by switch
   cisco.nd.nd_manage_resource_manager:
     fabric: my_fabric
-    state: query
+    state: gathered
     config:
       - switch:
           - 192.168.10.201
@@ -168,14 +170,14 @@ EXAMPLES = """
 RETURN = """
 changed:
   description: Whether any changes were made.
-  returned: always
+  returned: when state is not gathered
   type: bool
 diff:
   description: Tracking of merged and deleted resources.
-  returned: always
+  returned: when state is not gathered
   type: list
   elements: dict
-  sample: [{"merged": [], "deleted": [], "query": [], "debugs": []}]
+  sample: [{"merged": [], "deleted": [], "gathered": [], "debugs": []}]
 response:
   description: API responses received during module execution.
   returned: always
@@ -183,12 +185,19 @@ response:
   elements: dict
 before:
   description: State before module execution (always empty list for this module).
-  returned: always
+  returned: when state is not gathered
   type: list
 after:
   description: State after module execution (always empty list for this module).
-  returned: always
+  returned: when state is not gathered
   type: list
+gathered:
+  description:
+  - The current fabric resource returned.
+  - Each entry mirrors the resource data from the ND API.
+  returned: when state is gathered
+  type: list
+  elements: dict
 """
 
 import copy
@@ -279,8 +288,8 @@ class NDResourceManagerModule:
         self.state = module.params["state"]
         self.config = module.params.get("config") or []
 
-        # DCNM-compatible tracking dicts
-        self.changed_dict = [{"merged": [], "deleted": [], "query": [], "debugs": []}]
+        # ND-compatible tracking dicts
+        self.changed_dict = [{"merged": [], "deleted": [], "gathered": [], "debugs": []}]
         self.api_responses = []
 
         # Cached GET results
@@ -370,7 +379,7 @@ class NDResourceManagerModule:
                 f"pool_name={item.get('pool_name')}, scope_type={item.get('scope_type')}, "
                 f"pool_type={item.get('pool_type')}"
             )
-            if self.state != "query":
+            if self.state != "gathered":
                 # Mandatory parameter checks
                 for field in ("scope_type", "pool_type", "pool_name", "entity_name"):
                     if item.get(field) is None:
@@ -411,7 +420,7 @@ class NDResourceManagerModule:
                     self.log.debug("Pool/scope compatibility check passed")
 
             # Pydantic cross-field validation for merged/deleted
-            if self.state != "query":
+            if self.state != "gathered":
                 try:
                     ResourceManagerConfigModel.from_config(item)
                     self.log.debug(
@@ -1029,11 +1038,11 @@ class NDResourceManagerModule:
             f"{resource_ids}"
         )
 
-    def manage_query(self):
+    def manage_gathered(self):
         """Return resources filtered by config criteria (or all resources if no config)."""
         config_count = len(self.config) if self.config else 0
         self.log.info(
-            f"manage_query: Querying resources for fabric={self.fabric}, "
+            f"manage_gathered: Gathering resources for fabric={self.fabric}, "
             f"filter_count={config_count}"
         )
         self._get_all_resources()
@@ -1042,11 +1051,11 @@ class NDResourceManagerModule:
             # No filters — return everything
             results = [self._to_dict(r) for r in self._all_resources]
             self.log.info(
-                f"manage_query: No filter criteria provided, "
+                f"manage_gathered: No filter criteria provided, "
                 f"returning all {len(results)} resource(s)"
             )
-            self.changed_dict[0]["query"].extend(results)
             self.api_responses.extend(results)
+            self.changed_dict[0]["gathered"].extend(results)
             return
 
         seen_ids = set()
@@ -1112,10 +1121,10 @@ class NDResourceManagerModule:
                     seen_ids.add(rid)
 
         self.log.info(
-            f"manage_query: Query complete, {len(results)} resource(s) matched filters"
+            f"manage_gathered: Gather complete, {len(results)} resource(s) matched filters"
         )
-        self.changed_dict[0]["query"].extend(results)
         self.api_responses.extend(results)
+        self.changed_dict[0]["gathered"].extend(results)
 
     # ------------------------------------------------------------------
     # Entry point
@@ -1132,14 +1141,26 @@ class NDResourceManagerModule:
         elif self.state == "deleted":
             self.log.info("manage_state: Dispatching to manage_deleted()")
             self.manage_deleted()
-        elif self.state == "query":
-            self.log.info("manage_state: Dispatching to manage_query()")
-            self.manage_query()
+        elif self.state == "gathered":
+            self.log.info("manage_state: Dispatching to manage_gathered()")
+            self.manage_gathered()
 
         self.log.info(f"manage_state: State handler completed for state={self.state}")
 
     def exit_module(self):
-        """Build and emit module output using NDOutput with DCNM-compatible extras."""
+        """Build and emit module output following the nd_manage_switches output structure."""
+        # gathered state: return only the gathered list, no diff/response/before/after
+        if self.state == "gathered":
+            self.log.info(
+                f"exit_module: gathered state, returning "
+                f"{len(self.changed_dict[0]['gathered'])} resource(s)"
+            )
+            self.module.exit_json(
+                changed=False,
+                gathered=self.changed_dict[0]["gathered"],
+            )
+            return
+
         changed = (
             len(self.changed_dict[0]["merged"]) > 0
             or len(self.changed_dict[0]["deleted"]) > 0
@@ -1154,7 +1175,7 @@ class NDResourceManagerModule:
         self.log.info(
             f"exit_module: merged={len(self.changed_dict[0]['merged'])}, "
             f"deleted={len(self.changed_dict[0]['deleted'])}, "
-            f"query={len(self.changed_dict[0]['query'])}, "
+            f"gathered={len(self.changed_dict[0]['gathered'])}, "
             f"changed={changed}, check_mode={self.module.check_mode}"
         )
 
@@ -1289,7 +1310,7 @@ def main():
         state=dict(
             type="str",
             default="merged",
-            choices=["merged", "deleted", "query"],
+            choices=["merged", "deleted", "gathered"],
         ),
         config=dict(
             type="list",
