@@ -17,10 +17,6 @@ __metaclass__ = type
 from enum import Enum
 from typing import Dict, List
 
-from ansible_collections.cisco.nd.plugins.module_utils.models.nd_manage_resource_manager.VlanTypeEnum import (
-    VlanType,
-)
-
 
 # =============================================================================
 # POOL_SCOPE_MAP - Derived from dcnm_rm_check_resource_params()
@@ -98,6 +94,28 @@ class ScopeType(str, Enum):
     @classmethod
     def choices(cls) -> List[str]:
         """Return list of valid choices."""
+        return [e.value for e in cls]
+
+
+class VlanType(str, Enum):
+    """
+    VLAN type enumeration for the proposeVlan and unusedVlans endpoints.
+
+    Valid values:
+      networkVlan         - Network VLAN
+      vrfVlan             - VRF VLAN
+      serviceNetworkVlan  - Service network VLAN
+      vpcPeerLinkVlan     - VPC peer-link VLAN
+    """
+
+    NETWORK_VLAN = "networkVlan"
+    VRF_VLAN = "vrfVlan"
+    SERVICE_NETWORK_VLAN = "serviceNetworkVlan"
+    VPC_PEER_LINK_VLAN = "vpcPeerLinkVlan"
+
+    @classmethod
+    def choices(cls):
+        """Return list of valid string values."""
         return [e.value for e in cls]
 
 

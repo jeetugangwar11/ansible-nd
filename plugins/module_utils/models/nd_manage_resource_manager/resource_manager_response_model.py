@@ -5,40 +5,32 @@
 # GNU General Public License v3.0+ (see LICENSE or https://www.gnu.org/licenses/gpl-3.0.txt)
 
 """
-ResourceCreateResponse - Individual item returned in the batch-create response.
+ResourcesResponseModel - Response model for list-all-resources endpoint.
 
-COMPOSITE model: contains Union[FabricScope, DeviceScope, DeviceInterfaceScope,
-LinkScope, DevicePairScope] as the scope_details field.
+COMPOSITE model: contains List[ResourceGetUpdatedModel].
 
-Endpoint: POST /fabrics/{fabricName}/resources (207 multi-status response item)
+Endpoint: GET /fabrics/{fabricName}/resources
 """
 
 from __future__ import absolute_import, division, print_function
 
 __metaclass__ = type
 
-from typing import ClassVar, List, Optional, Union
+from typing import Any, ClassVar, Dict, List, Optional, Union
 
 from ansible_collections.cisco.nd.plugins.module_utils.models.base import NDBaseModel
-from ansible_collections.cisco.nd.plugins.module_utils.models.nd_manage_resource_manager.DeviceInterfaceScopeModel import (
-    DeviceInterfaceScope,
-)
-from ansible_collections.cisco.nd.plugins.module_utils.models.nd_manage_resource_manager.DevicePairScopeModel import (
-    DevicePairScope,
-)
-from ansible_collections.cisco.nd.plugins.module_utils.models.nd_manage_resource_manager.DeviceScopeModel import (
-    DeviceScope,
-)
-from ansible_collections.cisco.nd.plugins.module_utils.models.nd_manage_resource_manager.FabricScopeModel import (
+from ansible_collections.cisco.nd.plugins.module_utils.models.nested import NDNestedModel
+from ansible_collections.cisco.nd.plugins.module_utils.models.nd_manage_resource_manager.resource_manager_request_model import (
     FabricScope,
-)
-from ansible_collections.cisco.nd.plugins.module_utils.models.nd_manage_resource_manager.LinkScopeModel import (
+    DeviceScope,
+    DeviceInterfaceScope,
     LinkScope,
+    DevicePairScope,
 )
 from ansible_collections.cisco.nd.plugins.module_utils.pydantic_compat import Field
 
 
-class ResourceCreateResponse(NDBaseModel):
+class ResourceManagerResponse(NDNestedModel):  # noqa: F811
     """
     Individual resource allocation response item for POST /fabrics/{fabricName}/resources.
 
@@ -102,4 +94,38 @@ class ResourceCreateResponse(NDBaseModel):
     )
 
 
-__all__ = ["ResourceCreateResponse"]
+class ResourcesManagerBatchResponse(NDBaseModel):
+    """
+    Response body for POST /fabrics/{fabricName}/resources (batch create).
+
+    Composite: contains List[ResourceManagerResponse].
+    """
+
+    identifiers: ClassVar[List[str]] = []
+
+    resources: List[ResourceManagerResponse] = Field(
+        default_factory=list, description="List of resource data"
+    )
+    meta: Optional[Dict[str, Any]] = Field(
+        default=None, description="Response metadata"
+    )
+
+    @classmethod
+    def from_response(cls, response: Any) -> "ResourcesManagerBatchResponse":
+        """Create instance from a raw API response dict.
+
+        Accepts the raw dict returned by nd.request() for the batch POST
+        endpoint.  If the response already has a ``resources`` key it is
+        validated directly; a bare list is wrapped automatically.
+        """
+        if isinstance(response, list):
+            return cls.model_validate({"resources": response})
+        if isinstance(response, dict):
+            return cls.model_validate(response)
+        return cls(resources=[])
+
+
+__all__ = [
+    "ResourcesManagerBatchResponse",
+    "ResourceManagerResponse",
+    ]
