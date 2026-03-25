@@ -666,6 +666,58 @@ class NDResourceManagerModule:
         return payload
 
 
+    # ------------------------------------------------------------------
+    # Gathered results translation
+    # ------------------------------------------------------------------
+
+    def _determine_pool_type(self, resource_value):
+        """Infer pool_type (ID | IP | SUBNET) from a resource value string."""
+        if not resource_value:
+            return "ID"
+        val = str(resource_value).strip()
+        if "/" in val:
+            try:
+                ipaddress.ip_network(val, strict=False)
+                return "SUBNET"
+            except ValueError:
+                pass
+        try:
+            ipaddress.ip_address(val)
+            return "IP"
+        except ValueError:
+            pass
+        return "ID"
+
+    def translate_gathered_results(self, resources):
+        """Translate raw API resource items to the merged-state config format.
+
+        Converts each resource from the ND API response shape
+        (camelCase keys, nested scopeDetails) into the playbook ``config``
+        format used by ``state: merged``:
+          entity_name, pool_type, pool_name, scope_type, resource[, switch].
+        """
+        translated = []
+        for res in resources:
+            entity_name = self._get_entity_name(res)
+            pool_name = self._get_pool_name(res)
+            resource_value = self._get_resource_value(res)
+            scope_type = self._get_scope_type(res)
+            switch_ip = self._get_switch_ip(res)
+            pool_type = self._determine_pool_type(resource_value)
+
+            item = {
+                "entity_name": entity_name,
+                "pool_type": pool_type,
+                "pool_name": pool_name,
+                "scope_type": scope_type,
+                "resource": resource_value,
+            }
+            if scope_type != "fabric" and switch_ip:
+                item["switch"] = [switch_ip]
+
+            translated.append(item)
+        return translated
+
     def manage_merged(self):
         """Create resources that don't exist or have a different value."""
         self.log.info(
@@ -884,8 +936,8 @@ class NDResourceManagerModule:
         )
 
         if not self.config:
-            # No filters — return everything
-            results = [self._to_dict(r) for r in self._all_resources]
+            # No filters — return everything translated to merged format
+            results = self.translate_gathered_results(self._all_resources)
             self.log.info(
                 f"manage_gathered: No filter criteria provided, "
                 f"returning all {len(results)} resource(s)"
@@ -953,7 +1005,7 @@ class NDResourceManagerModule:
                     f"manage_query: Resource id='{rid}' matched all filters "
                     f"(entity_name='{res_entity}', pool_name='{res_pool}', switch_ip='{res_sw}')"
                 )
-                result_dict = self._to_dict(res)
+                result_dict = self.translate_gathered_results([res])[0]
                 results.append(result_dict)
                 if rid is not None:
                     seen_ids.add(rid)
