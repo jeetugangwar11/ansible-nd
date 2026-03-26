@@ -77,7 +77,7 @@ class ResourceManagerConfigModel(NDBaseModel):
             "Unique name identifying the entity to which the resource is allocated. "
             "Format depends on scope_type: "
             "fabric/device → free-form string; "
-            "device_pair → exactly 2 tildes (~), e.g. 'SER1~SER2~label'; "
+            "device_pair → 1 or 2 tildes (~), e.g. 'SER1~SER2' or 'SER1~SER2~label'; "
             "device_interface → exactly 1 tilde (~), e.g. 'SER~Ethernet1/13'; "
             "link → exactly 3 tildes (~), e.g. 'SER1~Eth1/3~SER2~Eth1/3'."
         ),
@@ -306,7 +306,7 @@ class ResourceManagerConfigModel(NDBaseModel):
         """Validate entity_name tilde (~) count matches the required scope_type format.
 
         Tilde conventions:
-          device_pair:      exactly 2 tildes  e.g. 'SER1~SER2~label'
+          device_pair:      1 or 2 tildes  e.g. 'SER1~SER2' or 'SER1~SER2~label'
           device_interface: exactly 1 tilde   e.g. 'SER~Ethernet1/13'
           link:             exactly 3 tildes  e.g. 'SER1~Eth1/3~SER2~Eth1/3'
           fabric/device:    no tilde constraint
@@ -317,10 +317,10 @@ class ResourceManagerConfigModel(NDBaseModel):
         scope_type = self.scope_type
         tilde_count = entity_name.count("~")
         if scope_type == ScopeType.DEVICE_PAIR:
-            if tilde_count != 2:
+            if tilde_count not in (1, 2):
                 raise ValueError(
-                    "entity_name for scope_type 'device_pair' must contain exactly 2 tildes (~), "
-                    "e.g. 'SER1~SER2~label', got: '{0}' ({1} tilde(s))".format(
+                    "entity_name for scope_type 'device_pair' must contain 1 or 2 tildes (~), "
+                    "e.g. 'SER1~SER2' or 'SER1~SER2~label', got: '{0}' ({1} tilde(s))".format(
                         entity_name, tilde_count
                     )
                 )
@@ -417,6 +417,8 @@ class ResourceManagerConfigModel(NDBaseModel):
                 missing.append("pool_name")
             if self.scope_type is None:
                 missing.append("scope_type")
+            if state == "merged" and not self.resource:
+                missing.append("resource")
             if missing:
                 raise ValueError(
                     "Mandatory parameter(s) missing for state='{0}': {1}".format(

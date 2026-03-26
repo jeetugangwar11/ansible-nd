@@ -84,7 +84,9 @@ options:
           - An integer string if C(pool_type=ID), e.g. '101'.
           - An IPv4 or IPv6 address if C(pool_type=IP), e.g. '110.1.1.1'.
           - A CIDR block if C(pool_type=SUBNET), e.g. '10.1.1.0/24'.
+          - Required when C(state=merged).
         type: str
+        required: false
       switch:
         description:
           - List of switch IP addresses to which the resource is assigned.
