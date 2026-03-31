@@ -1,0 +1,31 @@
+# hosts
+#
+# Inventory file for nd_manage_resource_manager.yml playbook.
+#
+# Usage:
+#   ansible-playbook -i hosts nd_manage_resource_manager.yml
+#
+# Override vars at runtime:
+#   ansible-playbook -i hosts nd_manage_resource_manager.yml \
+#     -e "fabric=my_fabric switch_1=192.168.1.1 switch_2=192.168.1.2"
+
+[nd]
+#ndfc_controller  ansible_host=10.122.84.112
+ndfc_controller  ansible_host=10.104.251.111
+
+[nd:vars]
+# NDFC controller credentials
+ansible_user=admin
+#ansible_password=idgeR09!
+ansible_password=Bgl12@123
+
+
+# httpapi connection settings
+ansible_connection=ansible.netcommon.httpapi
+ansible_network_os=cisco.nd.nd
+ansible_httpapi_use_ssl=true
+ansible_httpapi_validate_certs=false
+
+# Optional
+# ansible_httpapi_port=443
+# ansible_nd_login_domain=DefaultAuth
