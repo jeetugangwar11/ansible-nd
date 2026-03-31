@@ -104,28 +104,18 @@ class ResourceManagerDiffEngine:
         return "~".join(sorted(entity_name.split("~")))
 
     @staticmethod
-    def _extract_scope_switch_ip(scope_details) -> Optional[str]:
-        """Extract the primary switch IP from a scope_details model.
+    def _extract_scope_switch_key_val(scope_details, switch_key, src_switch_key) -> Optional[str]:
 
-        Uses isinstance checks against the scope model types from
-        resource_manager_request_model to safely access the correct field.
-
-        Args:
-            scope_details: A scope model instance (FabricScope, DeviceScope, etc.)
-
-        Returns:
-            Switch IP string, or None for fabric-scoped resources.
-        """
         if scope_details is None:
             return None
         if isinstance(scope_details, FabricScope):
             return None
         if isinstance(scope_details, (DeviceScope, DeviceInterfaceScope)):
-            return getattr(scope_details, "switch_ip", None)
+            return getattr(scope_details, switch_key, None)
         if isinstance(scope_details, (DevicePairScope, LinkScope)):
-            return getattr(scope_details, "src_switch_ip", None)
+            return getattr(scope_details, src_switch_key, None)
         # Fallback: try common attribute names
-        return getattr(scope_details, "switch_ip", None) or getattr(scope_details, "src_switch_ip", None)
+        return getattr(scope_details, switch_key, None) or getattr(scope_details, src_switch_key, None)
 
     @staticmethod
     def _extract_scope_type(scope_details) -> Optional[str]:
@@ -204,7 +194,10 @@ class ResourceManagerDiffEngine:
             ResourceManagerDiffEngine._normalize_entity_key(entity_name)
             if entity_name else None
         )
-        return (norm_entity, pool_name, scope_type, switch_ip)
+        # device_pair and link encode both endpoints in entity_name;
+        # normalize switch to None so existing_index and proposed lookups align.
+        norm_switch = None if scope_type in ("device_pair", "link") else switch_ip
+        return (norm_entity, pool_name, scope_type, norm_switch)
 
     @staticmethod
     def validate_configs(
@@ -324,20 +317,23 @@ class ResourceManagerDiffEngine:
         log.debug(
             f"Comparing {len(proposed)} proposed vs {len(existing)} existing resources"
         )
+        log.debug(
+            f"Comparing proposed : {proposed}  vs  existing : {existing} existing resources"
+        )
 
         # Build index of existing resources keyed by
-        # (normalized_entity, pool_name, playbook_scope_type, switch_ip)
+        # (normalized_entity, pool_name, playbook_scope_type, switch_id)
         existing_index: Dict[Tuple, ResourceManagerResponse] = {}
         for res in existing:
             entity = res.entity_name
             pool = res.pool_name
             scope_type = ResourceManagerDiffEngine._extract_scope_type(res.scope_details)
-            switch_ip = ResourceManagerDiffEngine._extract_scope_switch_ip(res.scope_details)
-            key = ResourceManagerDiffEngine._make_resource_key(entity, pool, scope_type, switch_ip)
+            switch_id = ResourceManagerDiffEngine._extract_scope_switch_key_val(res.scope_details, switch_key="switch_id", src_switch_key="src_switch_id")
+            key = ResourceManagerDiffEngine._make_resource_key(entity, pool, scope_type, switch_id)
             existing_index[key] = res
             log.debug(
                 f"Existing index entry: entity={entity}, pool={pool}, "
-                f"scope_type={scope_type}, switch_ip={switch_ip}"
+                f"scope_type={scope_type}, switch_id={switch_id}"
             )
 
         log.debug(f"Built existing index with {len(existing_index)} entries")
@@ -357,6 +353,12 @@ class ResourceManagerDiffEngine:
         for res in existing:
             norm = ResourceManagerDiffEngine._normalize_entity_key(res.entity_name or "")
             entity_only_index.setdefault(norm, []).append(res)
+            log.debug(
+                f"entity_only_index: added entity='{res.entity_name}' "
+                f"under norm_key='{norm}' (total under key: {len(entity_only_index[norm])})"
+            )
+
+        log.debug(f"Built entity_only_index with {len(entity_only_index)} unique normalised key(s)")
 
         # Track which existing keys matched at least one proposed entry
         matched_existing_keys: set = set()
@@ -368,15 +370,32 @@ class ResourceManagerDiffEngine:
             entity_name = cfg.entity_name
             resource_value = cfg.resource
 
+            log.debug(
+                f"Processing proposed cfg: entity={entity_name}, pool={pool_name}, "
+                f"scope={scope_type}, resource={resource_value}, switch={cfg.switch}"
+            )
+
             # device_pair and link encode both endpoints in entity_name; one lookup covers the pair.
             if scope_type in ("device_pair", "link"):
                 switches = [None]
+                log.debug(
+                    f"scope_type='{scope_type}' is multi-endpoint — "
+                    f"using single switch=None lookup for entity='{entity_name}'"
+                )
             else:
                 switches = cfg.switch if (scope_type != "fabric" and cfg.switch) else [None]
+                log.debug(
+                    f"scope_type='{scope_type}' — resolved switches={switches} "
+                    f"for entity='{entity_name}'"
+                )
 
             for sw in switches:
                 key = ResourceManagerDiffEngine._make_resource_key(
                     entity_name, pool_name, scope_type, sw
+                )
+                log.debug(
+                    f"Lookup key={key} for entity='{entity_name}', "
+                    f"pool='{pool_name}', scope='{scope_type}', switch={sw}"
                 )
                 existing_res = existing_index.get(key)
 
@@ -392,13 +411,18 @@ class ResourceManagerDiffEngine:
                     # pool_name / scope_type / switch_ip.  Mirrors DCNM's
                     # dcnm_rm_get_mismatched_values() / changed_dict["debugs"] logic.
                     norm = ResourceManagerDiffEngine._normalize_entity_key(entity_name)
-                    for partial in entity_only_index.get(norm, []):
+                    partials = entity_only_index.get(norm, [])
+                    log.debug(
+                        f"Partial-match scan for entity='{entity_name}' "
+                        f"(norm='{norm}'): {len(partials)} candidate(s)"
+                    )
+                    for partial in partials:
                         partial_pool = partial.pool_name
                         partial_scope = ResourceManagerDiffEngine._extract_scope_type(
                             partial.scope_details
                         )
-                        partial_sw = ResourceManagerDiffEngine._extract_scope_switch_ip(
-                            partial.scope_details
+                        partial_sw = ResourceManagerDiffEngine._extract_scope_switch_key_val(
+                            partial.scope_details, switch_key="switch_ip", src_switch_key="src_switch_ip"
                         )
                         mismatch = {
                             "have_pool_name": partial_pool,
@@ -414,6 +438,12 @@ class ResourceManagerDiffEngine:
                             {"Entity Name": entity_name, "MISMATCHED_VALUES": mismatch}
                         )
                 else:
+                    log.debug(
+                        f"Resource (entity={entity_name}, pool={pool_name}, "
+                        f"scope={scope_type}, switch={sw}) found in existing — "
+                        f"resource_id={getattr(existing_res, 'resource_id', None)}, "
+                        f"existing_value='{existing_res.resource_value}'"
+                    )
                     matched_existing_keys.add(key)
                     existing_value = existing_res.resource_value
 
@@ -435,6 +465,11 @@ class ResourceManagerDiffEngine:
                         )
                         changes["to_update"].append((cfg, sw, existing_res))
 
+        log.debug(
+            f"Proposed scan complete — matched_existing_keys={len(matched_existing_keys)}, "
+            f"total existing_index keys={len(existing_index)}"
+        )
+
         # Resources in existing but not matched by any proposed entry → to_delete
         for key, res in existing_index.items():
             if key not in matched_existing_keys:
@@ -443,6 +478,11 @@ class ResourceManagerDiffEngine:
                     f"not in proposed — marking to_delete"
                 )
                 changes["to_delete"].append(res)
+            else:
+                log.debug(
+                    f"Existing resource (entity={res.entity_name}, pool={res.pool_name}, "
+                    f"key={key}) was matched by a proposed entry — skipping to_delete"
+                )
 
         log.info(
             f"Compute changes summary: "
@@ -819,16 +859,16 @@ class NDResourceManagerModule:
         return mapped
 
     def _get_switch_ip(self, resource):
-        """Return the primary switch IP from scopeDetails (src switch for device_pair/link).
+        """Return the primary switch IP/ID from scopeDetails (src switch for device_pair/link).
 
-        Delegates to ResourceManagerDiffEngine._extract_scope_switch_ip for model
+        Delegates to ResourceManagerDiffEngine._extract_scope_switch_key_val for model
         instances so that all scope types are handled uniformly:
           - fabric              → None
           - device / device_interface → switch_ip
           - device_pair / link  → src_switch_ip
         """
         if hasattr(resource, "scope_details") and resource.scope_details:
-            value = ResourceManagerDiffEngine._extract_scope_switch_ip(resource.scope_details)
+            value = ResourceManagerDiffEngine._extract_scope_switch_key_val(resource.scope_details, switch_key="switch_ip", src_switch_key="src_switch_ip")
             self.log.debug(f"_get_switch_ip: from model scope_details, switch_ip={value}")
             return value
         if isinstance(resource, dict):
