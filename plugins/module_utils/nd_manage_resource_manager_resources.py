@@ -1396,10 +1396,12 @@ class NDResourceManagerModule:
         resp_data = self.nd.request(ep.path, ep.verb, data=remove_req.to_payload())
 
         remove_response = RemoveResourcesByIdsResponse.from_response(resp_data)
+
         self.log.debug(
             f"manage_deleted: Delete API response parsed — "
             f"{len(remove_response.resources)} item(s) returned"
         )
+
         for resp_item in remove_response.resources:
             self.api_responses.append(
                 {"RETURN_CODE": 200, "DATA": resp_item.model_dump(by_alias=True, exclude_none=True)}
@@ -1437,6 +1439,14 @@ class NDResourceManagerModule:
             filter_pool = filter_item.get("pool_name")
             filter_switches = filter_item.get("switch") or []
 
+            # Skip filter items with no active criteria to avoid matching all resources
+            if not filter_entity and not filter_pool and not filter_switches:
+                self.log.debug(
+                    "manage_query: Skipping filter item with no active criteria "
+                    f"(entity_name={filter_entity}, pool_name={filter_pool}, switches={filter_switches})"
+                )
+                continue
+
             self.log.debug(
                 f"manage_query: Applying filter: entity_name={filter_entity}, "
                 f"pool_name={filter_pool}, switches={filter_switches}"
@@ -1454,8 +1464,16 @@ class NDResourceManagerModule:
 
                 res_entity = self._get_entity_name(res)
                 res_pool = self._get_pool_name(res)
-                # Prefer scopeDetails.switchIp; fall back to top-level ipAddress (management IP)
-                res_sw = self._get_switch_ip(res) or self._get_ip_address(res)
+                # Use switchId (serial number) from scopeDetails to match playbook switch config values
+                if hasattr(res, "scope_details") and res.scope_details:
+                    res_sw = ResourceManagerDiffEngine._extract_scope_switch_key_val(
+                        res.scope_details, switch_key="switch_id", src_switch_key="src_switch_id"
+                    )
+                elif isinstance(res, dict):
+                    sd = res.get("scopeDetails") or {}
+                    res_sw = sd.get("switchId") or sd.get("srcSwitchId")
+                else:
+                    res_sw = None
 
                 # Apply entity_name filter
                 if filter_entity and not self._entity_names_match(
@@ -1475,11 +1493,11 @@ class NDResourceManagerModule:
                     )
                     continue
 
-                # Apply switch filter: match management IP from scopeDetails.switchIp or
-                # top-level ipAddress; fabric-scoped resources (no IP) are correctly excluded
+                # Apply switch filter: match switchId (serial number) from scopeDetails;
+                # fabric-scoped resources (no switchId) are correctly excluded
                 if filter_switches and res_sw not in filter_switches:
                     self.log.debug(
-                        f"manage_query: Skipping resource id='{rid}', switch_ip not in filter: "
+                        f"manage_query: Skipping resource id='{rid}', switchId not in filter: "
                         f"resource_switch='{res_sw}', filter_switches={filter_switches}"
                     )
                     continue

@@ -409,15 +409,15 @@ class ResourceManagerConfigModel(NDBaseModel):
         state = (info.context or {}).get("state") if info else None
         if state in ("merged", "deleted"):
             missing = []
-            if not self.entity_name:
+            if self.entity_name is None:
                 missing.append("entity_name")
             if self.pool_type is None:
                 missing.append("pool_type")
-            if not self.pool_name:
+            if self.pool_name is None:
                 missing.append("pool_name")
             if self.scope_type is None:
                 missing.append("scope_type")
-            if state == "merged" and not self.resource:
+            if state == "merged" and self.resource is None:
                 missing.append("resource")
             if missing:
                 raise ValueError(
