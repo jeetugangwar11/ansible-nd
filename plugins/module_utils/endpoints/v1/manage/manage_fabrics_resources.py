@@ -30,7 +30,7 @@ from ansible_collections.cisco.nd.plugins.module_utils.endpoints.query_params im
     EndpointQueryParams,
     LuceneQueryParams,
 )
-from ansible_collections.cisco.nd.plugins.module_utils.pydantic_compat import (
+from ansible_collections.cisco.nd.plugins.module_utils.common.pydantic_compat import (
     BaseModel,
     ConfigDict,
     Field,

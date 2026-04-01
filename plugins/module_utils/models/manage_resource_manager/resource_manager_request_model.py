@@ -34,7 +34,7 @@ from typing_extensions import Self
 
 from ansible_collections.cisco.nd.plugins.module_utils.models.base import NDBaseModel
 from ansible_collections.cisco.nd.plugins.module_utils.models.nested import NDNestedModel
-from ansible_collections.cisco.nd.plugins.module_utils.pydantic_compat import Field, field_validator
+from ansible_collections.cisco.nd.plugins.module_utils.common.pydantic_compat import Field, field_validator
 from ansible_collections.cisco.nd.plugins.module_utils.models.manage_resource_manager.resource_validators import (
     ResourceValidators,
 )

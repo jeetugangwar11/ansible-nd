@@ -36,7 +36,7 @@ from ansible_collections.cisco.nd.plugins.module_utils.models.manage_resource_ma
     PoolType,
     ScopeType,
 )
-from ansible_collections.cisco.nd.plugins.module_utils.pydantic_compat import (
+from ansible_collections.cisco.nd.plugins.module_utils.common.pydantic_compat import (
     Field,
     field_validator,
     model_validator,

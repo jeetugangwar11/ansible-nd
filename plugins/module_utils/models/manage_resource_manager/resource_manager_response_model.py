@@ -27,7 +27,7 @@ from ansible_collections.cisco.nd.plugins.module_utils.models.manage_resource_ma
     LinkScope,
     DevicePairScope,
 )
-from ansible_collections.cisco.nd.plugins.module_utils.pydantic_compat import Field
+from ansible_collections.cisco.nd.plugins.module_utils.common.pydantic_compat import Field
 
 
 class ResourceManagerResponse(NDNestedModel):  # noqa: F811

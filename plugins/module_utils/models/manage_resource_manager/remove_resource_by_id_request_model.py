@@ -19,7 +19,7 @@ __metaclass__ = type
 from typing import Any, ClassVar, Dict, List
 
 from ansible_collections.cisco.nd.plugins.module_utils.models.base import NDBaseModel
-from ansible_collections.cisco.nd.plugins.module_utils.pydantic_compat import Field
+from ansible_collections.cisco.nd.plugins.module_utils.common.pydantic_compat import Field
 
 
 class RemoveResourcesByIdsRequest(NDBaseModel):
