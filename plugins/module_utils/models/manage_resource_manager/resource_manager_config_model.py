@@ -449,7 +449,7 @@ class ResourceManagerConfigModel(NDBaseModel):
             state=dict(
                 type="str",
                 default="merged",
-                choices=["merged", "deleted", "query", "gathered"],
+                choices=["merged", "deleted", "gathered"],
             ),
             save=dict(type="bool", default=True),
             deploy=dict(type="bool", default=True),

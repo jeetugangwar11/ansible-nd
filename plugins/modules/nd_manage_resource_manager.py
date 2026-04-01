@@ -29,13 +29,13 @@ options:
   state:
     description:
       - The required state of the configuration after module completion.
-      - C(gathered) reads the current fabric resource and returns it in the
     type: str
-    default: merged
+    required: false
     choices:
       - merged
       - deleted
       - gathered
+    default: merged
   config:
     description:
       - A list of dictionaries containing resource configurations.
@@ -81,18 +81,20 @@ options:
       resource:
         description:
           - Value of the resource being allocated.
-          - An integer string if C(pool_type=ID), e.g. '101'.
-          - An IPv4 or IPv6 address if C(pool_type=IP), e.g. '110.1.1.1'.
-          - A CIDR block if C(pool_type=SUBNET), e.g. '10.1.1.0/24'.
+          - The value will be an integer if C(pool_type=ID).
+          - The value will be an IPv4 or IPv6 address if C(pool_type=IP).
+          - The value will be an IPv4 or IPv6 address with a net mask if C(pool_type=SUBNET).
           - Required when C(state=merged).
         type: str
         required: false
       switch:
         description:
-          - List of switch IP addresses to which the resource is assigned.
+          - List of switch IP address or DNS name of the management interface of the switch to which the
+            allocated resource is assigned.
           - Required when C(scope_type) is not C(fabric).
         type: list
         elements: str
+        required: false
 extends_documentation_fragment:
   - cisco.nd.modules
 notes:
@@ -102,71 +104,183 @@ notes:
 """
 
 EXAMPLES = """
-- name: Create resources
+# Entity name format
+# ==================
+#
+# The format of the entity name depends on the scope_type of the resource being allocated.
+
+# Scope Type                Entity Name
+# =====================================
+# Fabric                    Eg: My_Network_30000
+# Device                    Eg: loopback0
+# Device Pair               Eg: 9H1Q6YOL08G~9B4ZC3JGND5~vPC1
+# Device Interface          Eg: 9H1Q6YOL08G~Ethernet1/13
+# Link                      Eg: 9H1Q6YOL08G~Ethernet1/3~9B4ZC3JGND5~Ethernet1/3
+
+# where 9H1Q6YOL08G and 9B4ZC3JGND5 are switch serial numbers
+
+# This module supports the following states:
+
+# Merged:
+#   Resources defined in the playbook will be merged into the target fabric.
+#     - If the resource does not exist it will be added.
+#     - If the resource exists but properties managed by the playbook are different
+#       they will be updated if possible.
+#     - Resources that are not specified in the playbook will be untouched.
+#
+# Deleted:
+#   Resources defined in the playbook will be deleted.
+#
+# Gathered:
+#   Returns the current ND state for the resources listed in the playbook.
+
+# CREATING RESOURCES
+# ==================
+- name: Create Resources
   cisco.nd.nd_manage_resource_manager:
-    fabric: my_fabric
-    state: merged
+    state: merged                               # choose form [merged, deleted, gathered]
+    fabric: test_fabric
     config:
-      - entity_name: "l3_vni_fabric"
-        pool_type: "ID"
-        pool_name: "L3_VNI"
-        scope_type: "fabric"
-        resource: "101"
+      - entity_name: "l3_vni_fabric"            # A unique name to identify the resource
+        pool_type: "ID"                         # choose from ['ID', 'IP', 'SUBNET']
+        pool_name: "L3_VNI"                     # Based on the 'poolType', select appropriate name
+        scope_type: "fabric"                    # choose from ['fabric', 'device', 'device_interface', 'device_pair', 'link']
+        resource: "101"                         # The value of the resource being created
 
-      - entity_name: "loopback_dev"
-        pool_type: "ID"
-        pool_name: "LOOPBACK_ID"
-        scope_type: "device"
-        switch:
-          - 192.168.10.201
-          - 192.168.10.202
-        resource: "200"
+      - entity_name: "9H1Q6YOL08G~9B4ZC3JGND5"  # A unique name to identify the resource
+        pool_type: "ID"                         # choose from ['ID', 'IP', 'SUBNET']
+        pool_name: "VPC_ID"                     # Based on the 'poolType', select appropriate name
+        scope_type: "device_pair"               # choose from ['fabric', 'device', 'device_interface', 'device_pair', 'link']
+        switch:                                 # provide the switch information to which the given resource is to be attached
+          - 192.168.10.150
+          - 192.168.10.151
+        resource: "500"                         # The value of the resource being created
 
-      - entity_name: "mmudigon-2"
-        pool_type: "IP"
-        pool_name: "LOOPBACK0_IP_POOL"
-        scope_type: "fabric"
-        resource: "110.1.1.1"
+      - entity_name: "mmudigon-2"               # A unique name to identify the resource
+        pool_type: "IP"                         # choose from ['ID', 'IP', 'SUBNET']
+        pool_name: "LOOPBACK0_IP_POOL"          # Based on the 'poolType', select appropriate name
+        scope_type: "fabric"                    # choose from ['fabric', 'device', 'device_interface', 'device_pair', 'link']
+        resource: "110.1.1.1"                   # The value of the resource being created
 
-- name: Delete resources
+      - entity_name: "9H1Q6YOL08G~Ethernet1/10" # A unique name to identify the resource
+        pool_type: "IP"                         # choose from ['ID', 'IP', 'SUBNET']
+        pool_name: "LOOPBACK1_IP_POOL"          # Based on the 'poolType', select appropriate name
+        scope_type: "device_interface"          # choose from ['fabric', 'device', 'device_interface', 'device_pair', 'link']
+        switch:                                 # provide the switch information to which the given resource is to be attached
+          - 192.168.10.150
+        resource: "fe:80::04"                   # The value of the resource being created
+
+      - entity_name: "9H1Q6YOL08G~Ethernet1/3~9B4ZC3JGND5~Ethernet1/3"  # A unique name to identify the resource
+        pool_type: "SUBNET"                     # choose from ['ID', 'IP', 'SUBNET']
+        pool_name: "SUBNET"                     # Based on the 'poolType', select appropriate name
+        scope_type: "link"                      # choose from ['fabric', 'device', 'device_interface', 'device_pair', 'link']
+        switch:                                 # provide the switch information to which the given resource is to be attached
+          - 192.168.10.150
+        resource: "fe:80:05::05/64"
+
+# DELETING RESOURCES
+# ==================
+
+- name: Delete Resources
   cisco.nd.nd_manage_resource_manager:
-    fabric: my_fabric
-    state: deleted
+    state: deleted                              # choose form [merged, deleted, gathered]
+    fabric: test_fabric
     config:
-      - entity_name: "l3_vni_fabric"
-        pool_type: "ID"
-        pool_name: "L3_VNI"
-        scope_type: "fabric"
+      - entity_name: "l3_vni_fabric"            # A unique name to identify the resource
+        pool_type: "ID"                         # choose from ['ID', 'IP', 'SUBNET']
+        pool_name: "L3_VNI"                     # Based on the 'poolType', select appropriate name
+        scope_type: "fabric"                    # choose from ['fabric', 'device', 'device_interface', 'device_pair', 'link']
 
-- name: Gather all resources from fabric
-  cisco.nd.nd_manage_resource_manager:
-    fabric: my_fabric
-    state: gathered
-  register: result
+      - entity_name: "9H1Q6YOL08G~9B4ZC3JGND5"  # A unique name to identify the resource
+        pool_type: "ID"                         # choose from ['ID', 'IP', 'SUBNET']
+        pool_name: "VPC_ID"                     # Based on the 'poolType', select appropriate name
+        scope_type: "device_pair"               # choose from ['fabric', 'device', 'device_interface', 'device_pair', 'link']
+        switch:                                 # provide the switch information to which the given resource is attached
+          - 192.168.10.150
+          - 192.168.10.151
 
-- name: Gather resources by entity name
+      - entity_name: "mmudigon-2"               # A unique name to identify the resource
+        pool_type: "IP"                         # choose from ['ID', 'IP', 'SUBNET']
+        pool_name: "LOOPBACK0_IP_POOL"          # Based on the 'poolType', select appropriate name
+        scope_type: "fabric"                    # choose from ['fabric', 'device', 'device_interface', 'device_pair', 'link']
+
+      - entity_name: "9H1Q6YOL08G~Ethernet1/10" # A unique name to identify the resource
+        pool_type: "IP"                         # choose from ['ID', 'IP', 'SUBNET']
+        pool_name: "LOOPBACK1_IP_POOL"          # Based on the 'poolType', select appropriate name
+        scope_type: "device_interface"          # choose from ['fabric', 'device', 'device_interface', 'device_pair', 'link']
+        switch:                                 # provide the switch information to which the given resource is attached
+          - 192.168.10.150
+
+      - entity_name: "9H1Q6YOL08G~Ethernet1/3~9B4ZC3JGND5~Ethernet1/3" # A unique name to identify the resource
+        pool_type: "SUBNET"                     # choose from ['ID', 'IP', 'SUBNET']
+        pool_name: "SUBNET"                     # Based on the 'poolType', select appropriate name
+        scope_type: "link"                      # choose from ['fabric', 'device', 'device_interface', 'device_pair', 'link']
+        switch:                                 # provide the switch information to which the given resource is attached
+          - 192.168.10.150
+
+# GATHERING RESOURCES
+# ===================
+
+- name: Gather all Resources - no filters
   cisco.nd.nd_manage_resource_manager:
-    fabric: my_fabric
-    state: gathered
+    state: gathered                            # choose form [merged, deleted, gathered]
+    fabric: test_fabric
+
+- name: Gather Resources - filter by entity name
+  cisco.nd.nd_manage_resource_manager:
+    state: gathered                             # choose form [merged, deleted, gathered]
+    fabric: test_fabric
     config:
-      - entity_name: "l3_vni_fabric"
-      - entity_name: "loopback_dev"
+      - entity_name: "l3_vni_fabric"            # A unique name to identify the resource
+      - entity_name: "loopback_dev"             # A unique name to identify the resource
+      - entity_name: "9H1Q6YOL08G~9B4ZC3JGND5"  # A unique name to identify the resource
+      - entity_name: "9H1Q6YOL08G~Ethernet1/10" # A unique name to identify the resource
+      - entity_name: "9H1Q6YOL08G~Ethernet1/3~9B4ZC3JGND5~Ethernet1/3" # A unique name to identify the resource
 
-- name: Gather resources by pool name
+- name: Gather Resources - filter by switch
   cisco.nd.nd_manage_resource_manager:
-    fabric: my_fabric
-    state: gathered
+    state: gathered                             # choose form [merged, deleted, gathered]
+    fabric: test_fabric
     config:
-      - pool_name: "L3_VNI"
-      - pool_name: "LOOPBACK_ID"
+      - switch:                                 # provide the switch information to which the given resource is attached
+          - 192.168.10.150
 
-- name: Gather resources by switch
+- name: Gather Resources - filter by fabric and pool name
   cisco.nd.nd_manage_resource_manager:
-    fabric: my_fabric
-    state: gathered
+    state: gathered                             # choose form [merged, deleted, gathered]
+    fabric: test_fabric
     config:
-      - switch:
-          - 192.168.10.201
+      - pool_name: "L3_VNI"                     # Based on the 'poolType', select appropriate name
+      - pool_name: "VPC_ID"                     # Based on the 'poolType', select appropriate name
+      - pool_name: "SUBNET"                     # Based on the 'poolType', select appropriate name
+
+- name: Gather Resources - filter by switch and pool name
+  cisco.nd.nd_manage_resource_manager:
+    state: gathered                             # choose form [merged, deleted, gathered]
+    fabric: "{{ ansible_it_fabric }}"
+    config:
+      - pool_name: "L3_VNI"                     # Based on the 'poolType', select appropriate name
+        switch:                                 # provide the switch information to which the given resource is attached
+          - 192.168.10.150
+      - pool_name: "LOOPBACK_ID"                # Based on the 'poolType', select appropriate name
+        switch:                                 # provide the switch information to which the given resource is attached
+          - 192.168.10.150
+      - pool_name: "VPC_ID"                     # Based on the 'poolType', select appropriate name
+        switch:                                 # provide the switch information to which the given resource is attached
+          - 192.168.10.151
+
+- name: Gather Resources - mixed query
+  cisco.nd.nd_manage_resource_manager:
+    state: gathered                             # choose form [merged, deleted, gathered]
+    fabric: test_fabric
+    config:
+      - entity_name: "l2_vni_fabric"            # A unique name to identify the resource
+      - switch:                                 # provide the switch information to which the given resource is attached
+          - 192.168.10.150
+      - pool_name: "LOOPBACK_ID"                # Based on the 'poolType', select appropriate name
+      - pool_name: "VPC_ID"                     # Based on the 'poolType', select appropriate name
+        switch:                                 # provide the switch information to which the given resource is attached
+          - 192.168.10.150
 """
 
 RETURN = """
@@ -243,16 +357,23 @@ def _resolve_switch_ids(nd, fabric_name, config):
     ip_to_switch_id = {}
     raw_switches = _query_fabric_switches(nd, fabric_name)
     log.debug(f"_resolve_switch_ids: retrieved {raw_switches} raw switch(es) from ND")
-    for sw in raw_switches:
+    for sw_idx, sw in enumerate(raw_switches):
         switch_id = sw.get("switchId") or sw.get("serialNumber")
         switch_ip = sw.get("fabricManagementIp") or sw.get("ip")
-        log.debug(f"_resolve_switch_ids: processing switch record: switch_id='{switch_id}', switch_ip='{switch_ip}'")
+        log.debug(
+            f"_resolve_switch_ids: switch record [{sw_idx}] — "
+            f"switchId='{switch_id}', fabricManagementIp/ip='{switch_ip}', "
+            f"raw_keys={list(sw.keys())}"
+        )
         if switch_id and switch_ip:
             ip_to_switch_id[str(switch_ip).strip()] = switch_id
-            log.debug(f"Mapped switchIp='{switch_ip}' -> switchId='{switch_id}'")
+            log.debug(
+                f"_resolve_switch_ids: [{sw_idx}] mapped switchIp='{switch_ip}' "
+                f"-> switchId='{switch_id}' (map_size_now={len(ip_to_switch_id)})"
+            )
         else:
             log.debug(
-                f"_resolve_switch_ids: skipping switch record missing id or ip: "
+                f"_resolve_switch_ids: [{sw_idx}] skipping — missing id or ip: "
                 f"switch_id='{switch_id}', switch_ip='{switch_ip}'"
             )
     log.debug(f"Switch IP-to-ID map built: {len(ip_to_switch_id)} entry/entries")
@@ -260,24 +381,40 @@ def _resolve_switch_ids(nd, fabric_name, config):
     # Translate switch IPs to switch IDs in a copy of the config
     config_copy = copy.deepcopy(config or [])
     log.debug(f"_resolve_switch_ids: translating switch lists for {len(config_copy)} config item(s)")
-    for item in config_copy:
+    for cfg_idx, item in enumerate(config_copy):
         raw_switch_list = item.get("switch") or []
+        entity_name = item.get("entity_name")
+        scope_type = item.get("scope_type")
         log.debug(
-            f"_resolve_switch_ids: item entity_name='{item.get('entity_name')}', "
-            f"raw_switch_list={raw_switch_list}"
+            f"_resolve_switch_ids: config item [{cfg_idx}] — "
+            f"entity_name='{entity_name}', scope_type='{scope_type}', "
+            f"raw_switch_list={raw_switch_list} (count={len(raw_switch_list)})"
         )
         if raw_switch_list:
-            item["switch"] = [
-                ip_to_switch_id.get(str(sw).strip(), str(sw).strip())
-                for sw in raw_switch_list
-            ]
+            resolved = []
+            for sw_ip in raw_switch_list:
+                sw_key = str(sw_ip).strip()
+                sw_id = ip_to_switch_id.get(sw_key, sw_key)
+                if sw_id != sw_key:
+                    log.debug(
+                        f"_resolve_switch_ids: [{cfg_idx}] entity='{entity_name}' "
+                        f"switch '{sw_ip}' -> resolved switchId='{sw_id}'"
+                    )
+                else:
+                    log.debug(
+                        f"_resolve_switch_ids: [{cfg_idx}] entity='{entity_name}' "
+                        f"switch '{sw_ip}' not found in map — passing through unchanged"
+                    )
+                resolved.append(sw_id)
+            item["switch"] = resolved
             log.debug(
-                f"Translated switches for entity '{item.get('entity_name')}': "
-                f"{raw_switch_list} -> {item['switch']}"
+                f"_resolve_switch_ids: [{cfg_idx}] entity='{entity_name}' "
+                f"final switch list: {raw_switch_list} -> {item['switch']}"
             )
         else:
             log.debug(
-                f"_resolve_switch_ids: no switch list for entity '{item.get('entity_name')}', skipping translation"
+                f"_resolve_switch_ids: [{cfg_idx}] entity='{entity_name}' — "
+                f"no switch list present (scope_type='{scope_type}'), skipping translation"
             )
 
     log.debug(f"_resolve_switch_ids: completed, returning {len(config_copy)} translated config item(s)")
@@ -311,19 +448,21 @@ def _query_fabric_switches(nd, fabric_name):
     if isinstance(response, list):
         log.debug(
             f"_query_fabric_switches: API returned a list of {len(response)} switch(es) "
-            f"for fabric='{fabric_name}'"
+            f"for fabric='{fabric_name}' — returning list directly"
         )
         return response
     if isinstance(response, dict):
         switches_list = response.get("switches", [])
+        dict_keys = list(response.keys())
         log.debug(
-            f"_query_fabric_switches: API returned dict, extracted "
-            f"{len(switches_list)} switch(es) for fabric='{fabric_name}'"
+            f"_query_fabric_switches: API returned dict with keys={dict_keys} — "
+            f"extracted 'switches' list with {len(switches_list)} item(s) "
+            f"for fabric='{fabric_name}'"
         )
         return switches_list
     log.warning(
-        f"_query_fabric_switches: unexpected response type {type(response).__name__} "
-        f"for fabric='{fabric_name}', returning empty list"
+        f"_query_fabric_switches: unexpected response type '{type(response).__name__}' "
+        f"(expected list or dict) for fabric='{fabric_name}' — returning empty list"
     )
     return []
 
@@ -350,13 +489,24 @@ def main():
         log_config = Log()
         log_config.config = "/Users/jeeram/ansible/collections/ansible_collections/cisco/nd/plugins/module_utils/logging_config.json"
         log_config.commit()
-    except (ValueError, Exception):
-        pass
+    except (ValueError, Exception) as log_init_exc:
+        pass  # logging will fall back to root logger; detailed reason captured below
     log = logging.getLogger("nd.nd_manage_resource_manager")
+    log.debug(
+        f"main: logging initialised (logger='{log.name}', "
+        f"effective_level={logging.getLevelName(log.getEffectiveLevel())})"
+    )
 
     # Get parameters
     fabric = module.params.get("fabric")
     output_level = module.params.get("output_level")
+    state = module.params.get("state")
+    config_count = len(module.params.get("config") or [])
+    log.debug(
+        f"main: resolved module params — fabric='{fabric}', state='{state}', "
+        f"output_level='{output_level}', config_count={config_count}, "
+        f"check_mode={module.check_mode}"
+    )
 
     # Initialize Results - this collects all operation results
     results = Results()
@@ -366,10 +516,20 @@ def main():
     try:
         # Initialize NDModule (uses RestSend infrastructure internally)
         nd = NDModule(module)
+        log.debug(
+            f"main: NDModule initialised — host='{module.params.get('host')}', "
+            f"username='{module.params.get('username')}'"
+        )
 
-        log.debug("Switch ID resolution started")
+        log.debug(
+            f"main: starting switch-ID resolution for fabric='{fabric}', "
+            f"raw_config_count={len(module.params.get('config') or [])}"
+        )
         config_copy = _resolve_switch_ids(nd, fabric, module.params["config"])
-        log.debug("Switch ID resolution complete")
+        log.debug(
+            f"main: switch-ID resolution complete — "
+            f"resolved_config_count={len(config_copy or [])}"
+        )
 
         # Create NDResourceManagerModule
         rm_module = NDResourceManagerModule(
@@ -377,25 +537,45 @@ def main():
             results=results,
             logger=log
         )
+        log.debug(
+            f"main: NDResourceManagerModule created — fabric='{fabric}', "
+            f"state='{state}', config_count={len(config_copy or [])}"
+        )
         rm_module.config = config_copy
 
         # Manage state for merged, overridden, deleted
+        log.debug(f"main: dispatching manage_state() for state='{state}'")
         rm_module.manage_state()
 
         # Exit with results
-        log.info(f"State management completed successfully. Changed: {results.changed}")
+        log.info(
+            f"main: manage_state() completed successfully — state='{state}', "
+            f"fabric='{fabric}', changed={results.changed}"
+        )
         rm_module.exit_module()
 
     except NDModuleError as error:
         # NDModule-specific errors (API failures, authentication issues, etc.)
-        log.error(f"NDModule error: {error.msg}")
+        log.error(
+            f"main: NDModuleError caught — error_type=NDModuleError, "
+            f"status={getattr(error, 'status', None)}, msg='{error.msg}', "
+            f"fabric='{fabric}', state='{state}'"
+        )
 
         # Try to get response from RestSend if available
         try:
             results.response_current = nd.rest_send.response_current
             results.result_current = nd.rest_send.result_current
-        except (AttributeError, ValueError):
+            log.debug(
+                f"main: RestSend response captured — "
+                f"RETURN_CODE={getattr(nd.rest_send.response_current, 'RETURN_CODE', 'N/A')}"
+            )
+        except (AttributeError, ValueError) as rest_exc:
             # Fallback if RestSend wasn't initialized or no response available
+            log.debug(
+                f"main: RestSend not available ({type(rest_exc).__name__}: {rest_exc}), "
+                f"building fallback response — RETURN_CODE={error.status if error.status else -1}"
+            )
             results.response_current = {
                 "RETURN_CODE": error.status if error.status else -1,
                 "MESSAGE": error.msg,
@@ -412,15 +592,28 @@ def main():
 
         # Add error details if debug output is requested
         if output_level == "debug":
+            log.debug(
+                f"main: output_level='debug' — attaching error_details to final_result "
+                f"(error_type=NDModuleError, msg='{error.msg}')"
+            )
             results.final_result["error_details"] = error.to_dict()
+        else:
+            log.debug(
+                f"main: output_level='{output_level}' — skipping error_details attachment"
+            )
 
-        log.error(f"Module failed: {results.final_result}")
+        log.error(
+            f"main: module failing with NDModuleError — msg='{error.msg}', "
+            f"final_result_keys={list(results.final_result.keys())}"
+        )
         module.fail_json(msg=error.msg, **results.final_result)
 
     except Exception as error:
         # Unexpected errors
-        log.error(f"Unexpected error during module execution: {str(error)}")
-        log.error(f"Error type: {type(error).__name__}")
+        log.error(
+            f"main: unexpected exception caught — error_type='{type(error).__name__}', "
+            f"msg='{str(error)}', fabric='{fabric}', state='{state}'"
+        )
 
         # Build failed result
         results.response_current = {
@@ -435,11 +628,28 @@ def main():
         results.diff_current = {}
         results.register_api_call()
         results.build_final_result()
+        log.debug(
+            f"main: built fallback failed result — RETURN_CODE=-1, "
+            f"error_type='{type(error).__name__}'"
+        )
 
         if output_level == "debug":
             import traceback
-            results.final_result["traceback"] = traceback.format_exc()
+            tb_str = traceback.format_exc()
+            results.final_result["traceback"] = tb_str
+            log.debug(
+                f"main: output_level='debug' — attaching traceback "
+                f"({len(tb_str.splitlines())} lines) to final_result"
+            )
+        else:
+            log.debug(
+                f"main: output_level='{output_level}' — skipping traceback attachment"
+            )
 
+        log.error(
+            f"main: module failing with unexpected error — "
+            f"error_type='{type(error).__name__}', msg='{str(error)}'"
+        )
         module.fail_json(msg=str(error), **results.final_result)
 
 
