@@ -17,17 +17,17 @@ from pydantic import ValidationError
 from ansible_collections.cisco.nd.plugins.module_utils.nd_v2 import NDModule
 from ansible_collections.cisco.nd.plugins.module_utils.rest.results import Results
 from ansible_collections.cisco.nd.plugins.module_utils.nd_output import NDOutput
-from ansible_collections.cisco.nd.plugins.module_utils.models.nd_manage_resource_manager.resource_manager_config_model import (
+from ansible_collections.cisco.nd.plugins.module_utils.models.manage_resource_manager.resource_manager_config_model import (
     ResourceManagerConfigModel,
 )
-from ansible_collections.cisco.nd.plugins.module_utils.models.nd_manage_resource_manager.resource_manager_response_model import ResourceManagerResponse
-from ansible_collections.cisco.nd.plugins.module_utils.models.nd_manage_resource_manager.remove_resource_by_id_request_model import (
+from ansible_collections.cisco.nd.plugins.module_utils.models.manage_resource_manager.resource_manager_response_model import ResourceManagerResponse
+from ansible_collections.cisco.nd.plugins.module_utils.models.manage_resource_manager.remove_resource_by_id_request_model import (
     RemoveResourcesByIdsRequest,
 )
-from ansible_collections.cisco.nd.plugins.module_utils.models.nd_manage_resource_manager.remove_resource_by_id_response_model import (
+from ansible_collections.cisco.nd.plugins.module_utils.models.manage_resource_manager.remove_resource_by_id_response_model import (
     RemoveResourcesByIdsResponse,
 )
-from ansible_collections.cisco.nd.plugins.module_utils.models.nd_manage_resource_manager.resource_manager_request_model import (
+from ansible_collections.cisco.nd.plugins.module_utils.models.manage_resource_manager.resource_manager_request_model import (
     ResourceManagerBatchRequest,
     ResourceManagerRequest,
     FabricScope,
@@ -36,10 +36,10 @@ from ansible_collections.cisco.nd.plugins.module_utils.models.nd_manage_resource
     DevicePairScope,
     LinkScope,
 )
-from ansible_collections.cisco.nd.plugins.module_utils.models.nd_manage_resource_manager.resource_manager_response_model import (
+from ansible_collections.cisco.nd.plugins.module_utils.models.manage_resource_manager.resource_manager_response_model import (
     ResourcesManagerBatchResponse,
 )
-from ansible_collections.cisco.nd.plugins.module_utils.endpoints.v1.manage.nd_resource_manager.nd_manage_resource_manager import (
+from ansible_collections.cisco.nd.plugins.module_utils.endpoints.v1.manage.manage_fabrics_resources import (
     EpManageFabricResourcesGet,
     EpManageFabricResourcesPost,
     EpManageFabricResourcesActionsRemovePost,
@@ -880,33 +880,6 @@ class NDResourceManagerModule:
         self.log.debug(f"_get_switch_ip: unrecognised resource type {type(resource)}, returning None")
         return None
 
-    def _get_ip_address(self, resource):
-        """Return the top-level ipAddress (management IP) from a resource."""
-        if hasattr(resource, "ip_address"):
-            value = resource.ip_address
-            self.log.debug(f"_get_ip_address: from model, ip_address={value}")
-            return value
-        if isinstance(resource, dict):
-            value = resource.get("ipAddress")
-            self.log.debug(f"_get_ip_address: from dict, ipAddress={value}")
-            return value
-        self.log.debug(f"_get_ip_address: unrecognised resource type {type(resource)}, returning None")
-        return None
-
-    def _get_fabric_name(self, resource):
-        """Return fabric name from scopeDetails."""
-        if hasattr(resource, "scope_details") and resource.scope_details:
-            value = getattr(resource.scope_details, "fabric_name", None)
-            self.log.debug(f"_get_fabric_name: from model scope_details, fabric_name={value}")
-            return value
-        if isinstance(resource, dict):
-            sd = resource.get("scopeDetails") or {}
-            value = sd.get("fabricName")
-            self.log.debug(f"_get_fabric_name: from dict scopeDetails, fabricName={value}")
-            return value
-        self.log.debug(f"_get_fabric_name: unrecognised resource type {type(resource)}, returning None")
-        return None
-
     def _to_dict(self, resource):
         """Convert a ResourceManagerResponse (or raw dict) to a plain dict for response output."""
         if hasattr(resource, "to_payload"):
@@ -935,114 +908,6 @@ class NDResourceManagerModule:
             f"match={result}"
         )
         return result
-
-    def _compare_resource_values(self, have, want):
-        """Compare resource values — IPv4/IPv6 aware (mirrors dcnm_rm_compare_resource_values)."""
-        if have is None and want is None:
-            self.log.debug("_compare_resource_values: both have and want are None, treating as equal")
-            return True
-        if have is None or want is None:
-            self.log.debug(
-                f"_compare_resource_values: one value is None (have={have}, want={want}), not equal"
-            )
-            return False
-
-        have = str(have).strip()
-        want = str(want).strip()
-
-        def _classify(val):
-            if "/" in val:
-                try:
-                    return "network", ipaddress.ip_network(val, strict=False)
-                except ValueError:
-                    pass
-            try:
-                return "address", ipaddress.ip_address(val)
-            except ValueError:
-                pass
-            return "raw", val
-
-        th, vh = _classify(have)
-        tw, vw = _classify(want)
-
-        self.log.debug(
-            f"_compare_resource_values: have='{have}' classified as ({th}, {vh}), "
-            f"want='{want}' classified as ({tw}, {vw})"
-        )
-
-        if th == tw == "address":
-            result = vh.exploded == vw.exploded
-            self.log.debug(
-                f"_compare_resource_values: address comparison: "
-                f"{vh.exploded} == {vw.exploded} -> {result}"
-            )
-            return result
-        if th == tw == "network":
-            result = vh == vw
-            self.log.debug(
-                f"_compare_resource_values: network comparison: {vh} == {vw} -> {result}"
-            )
-            return result
-        result = have == want
-        self.log.debug(
-            f"_compare_resource_values: raw string comparison: '{have}' == '{want}' -> {result}"
-        )
-        return result
-
-    def _find_matching_resources(
-        self, entity_name, pool_name, scope_type, switch_ip=None
-    ):
-        """Find cached resources matching the given criteria."""
-        self.log.debug(
-            f"Finding matching resources: entity_name={entity_name}, "
-            f"pool_name={pool_name}, scope_type={scope_type}, switch_ip={switch_ip}"
-        )
-        results = []
-        for res in self._all_resources:
-            res_entity = self._get_entity_name(res)
-            res_pool = self._get_pool_name(res)
-            res_scope = self._get_scope_type(res)
-
-            if not self._entity_names_match(res_entity, entity_name):
-                self.log.debug(
-                    f"_find_matching_resources: skipping resource, entity_name mismatch: "
-                    f"resource_entity='{res_entity}' vs wanted='{entity_name}'"
-                )
-                continue
-            if res_pool != pool_name:
-                self.log.debug(
-                    f"_find_matching_resources: skipping resource, pool_name mismatch: "
-                    f"resource_pool='{res_pool}' vs wanted='{pool_name}'"
-                )
-                continue
-            if res_scope != scope_type:
-                self.log.debug(
-                    f"_find_matching_resources: skipping resource, scope_type mismatch: "
-                    f"resource_scope='{res_scope}' vs wanted='{scope_type}'"
-                )
-                continue
-
-            # For non-fabric scopes, only match if switch_ip aligns
-            if scope_type != "fabric" and switch_ip is not None:
-                res_sw = self._get_switch_ip(res)
-                if res_sw != switch_ip:
-                    self.log.debug(
-                        f"_find_matching_resources: skipping resource, switch_ip mismatch: "
-                        f"resource_switch_ip='{res_sw}' vs wanted='{switch_ip}'"
-                    )
-                    continue
-
-            self.log.debug(
-                f"_find_matching_resources: matched resource: entity_name='{res_entity}', "
-                f"pool_name='{res_pool}', scope_type='{res_scope}'"
-            )
-            results.append(res)
-
-        self.log.debug(
-            f"Found {len(results)} matching resource(s) for entity_name={entity_name}, "
-            f"pool_name={pool_name}, scope_type={scope_type}, switch_ip={switch_ip}"
-        )
-        return results
 
     # ------------------------------------------------------------------
     # API payload builders

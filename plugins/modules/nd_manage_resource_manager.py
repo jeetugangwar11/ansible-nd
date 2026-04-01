@@ -211,13 +211,13 @@ from ansible_collections.cisco.nd.plugins.module_utils.nd_v2 import (
     NDModule,
     nd_argument_spec,
 )
-from ansible_collections.cisco.nd.plugins.module_utils.models.nd_manage_resource_manager.resource_manager_config_model import (
+from ansible_collections.cisco.nd.plugins.module_utils.models.manage_resource_manager.resource_manager_config_model import (
     ResourceManagerConfigModel,
 )
 from ansible_collections.cisco.nd.plugins.module_utils.common.exceptions import NDModuleError
 from ansible_collections.cisco.nd.plugins.module_utils.endpoints.v1.manage.base_path import BasePath
 from ansible_collections.cisco.nd.plugins.module_utils.rest.results import Results
-from ansible_collections.cisco.nd.plugins.module_utils.nd_manage_resource_manager_resources import NDResourceManagerModule
+from ansible_collections.cisco.nd.plugins.module_utils.manage_resource_manager.nd_manage_resource_manager_resources import NDResourceManagerModule
 
 
 def _resolve_switch_ids(nd, fabric_name, config):

@@ -31,7 +31,7 @@ from ipaddress import ip_address, ip_network
 from typing import Any, ClassVar, Dict, List, Optional
 
 from ansible_collections.cisco.nd.plugins.module_utils.models.base import NDBaseModel
-from ansible_collections.cisco.nd.plugins.module_utils.models.nd_manage_resource_manager.constants import (
+from ansible_collections.cisco.nd.plugins.module_utils.models.manage_resource_manager.constants import (
     POOL_SCOPE_MAP,
     PoolType,
     ScopeType,

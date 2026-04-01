@@ -20,7 +20,7 @@ from typing import Any, ClassVar, Dict, List, Optional, Union
 
 from ansible_collections.cisco.nd.plugins.module_utils.models.base import NDBaseModel
 from ansible_collections.cisco.nd.plugins.module_utils.models.nested import NDNestedModel
-from ansible_collections.cisco.nd.plugins.module_utils.models.nd_manage_resource_manager.resource_manager_request_model import (
+from ansible_collections.cisco.nd.plugins.module_utils.models.manage_resource_manager.resource_manager_request_model import (
     FabricScope,
     DeviceScope,
     DeviceInterfaceScope,
