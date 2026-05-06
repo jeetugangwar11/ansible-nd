@@ -32,6 +32,12 @@ class FabricNameMixin(BaseModel):
     fabric_name: Optional[str] = Field(default=None, min_length=1, max_length=64, description="Fabric name")
 
 
+class FilterMixin(BaseModel):
+    """Mixin for endpoints that require a Lucene filter expression."""
+
+    filter: Optional[str] = Field(default=None, min_length=1, description="Lucene filter expression")
+
+
 class ForceShowRunMixin(BaseModel):
     """Mixin for endpoints that require force_show_run parameter."""
 
@@ -62,22 +68,34 @@ class LoginIdMixin(BaseModel):
     login_id: Optional[str] = Field(default=None, min_length=1, description="Login ID")
 
 
+class MaxMixin(BaseModel):
+    """Mixin for endpoints that require a max results parameter."""
+
+    max: Optional[int] = Field(default=None, ge=1, description="Maximum number of results")
+
+
 class NetworkNameMixin(BaseModel):
     """Mixin for endpoints that require network_name parameter."""
 
     network_name: Optional[str] = Field(default=None, min_length=1, max_length=64, description="Network name")
 
 
-class NodeNameMixin(BaseModel):
-    """Mixin for endpoints that require node_name parameter."""
+class OffsetMixin(BaseModel):
+    """Mixin for endpoints that require a pagination offset parameter."""
 
-    node_name: Optional[str] = Field(default=None, min_length=1, description="Node name")
+    offset: Optional[int] = Field(default=None, ge=0, description="Pagination offset")
 
 
 class SwitchSerialNumberMixin(BaseModel):
     """Mixin for endpoints that require switch_sn parameter."""
 
     switch_sn: Optional[str] = Field(default=None, min_length=1, description="Switch serial number")
+
+
+class TicketIdMixin(BaseModel):
+    """Mixin for endpoints that require ticket_id parameter."""
+
+    ticket_id: Optional[str] = Field(default=None, min_length=1, description="Change control ticket ID")
 
 
 class VrfNameMixin(BaseModel):

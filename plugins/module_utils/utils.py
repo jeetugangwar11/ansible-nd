@@ -142,10 +142,7 @@ class ApiDataChecker:
         """
         if isinstance(data, dict) and "code" in data:
             error_msg = data.get("message", "Unknown error")
-            msg = (
-                f"{context} failed — controller returned error: "
-                f"{error_msg} (code={data['code']})"
-            )
+            msg = f"{context} failed — controller returned error: " f"{error_msg} (code={data['code']})"
             log.error(msg)
             if fail_callback is not None:
                 fail_callback(msg=msg)

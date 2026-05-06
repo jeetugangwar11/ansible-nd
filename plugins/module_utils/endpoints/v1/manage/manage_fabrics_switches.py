@@ -30,7 +30,6 @@ from ansible_collections.cisco.nd.plugins.module_utils.endpoints.mixins import (
     FilterMixin,
     MaxMixin,
     OffsetMixin,
-    SwitchSerialNumberMixin,
     TicketIdMixin,
 )
 from ansible_collections.cisco.nd.plugins.module_utils.endpoints.query_params import (
