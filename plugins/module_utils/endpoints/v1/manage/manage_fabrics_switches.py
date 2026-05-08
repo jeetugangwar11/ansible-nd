@@ -1,73 +1,168 @@
-# Copyright: (c) 2026, Jeet Ram (@jeeram) <jeeram@cisco.com>
+# -*- coding: utf-8 -*-
+
+# Copyright: (c) 2026, Akshayanat C S (@achengam) <achengam@cisco.com>
 
 # GNU General Public License v3.0+ (see LICENSE or https://www.gnu.org/licenses/gpl-3.0.txt)
 """
-ND Manage Switches endpoint models.
+ND Manage Fabric Switches endpoint models.
 
-This module contains endpoint definitions for switch query operations
-in the ND Manage API.
+This module contains endpoint definitions for switch CRUD operations
+within fabrics in the ND Manage API.
+
+Endpoints covered:
+- List switches in a fabric
+- Add switches to a fabric
 """
 
-from __future__ import annotations
+from __future__ import absolute_import, annotations, division, print_function
 
-from typing import Literal
+# pylint: disable=invalid-name
+__metaclass__ = type
+__author__ = "Akshayanat C S"
+# pylint: enable=invalid-name
+
+from typing import Literal, Optional
 
 from ansible_collections.cisco.nd.plugins.module_utils.enums import HttpVerbEnum
-from ansible_collections.cisco.nd.plugins.module_utils.endpoints.base import NDEndpointBaseModel
+from ansible_collections.cisco.nd.plugins.module_utils.endpoints.mixins import (
+    ClusterNameMixin,
+    FabricNameMixin,
+    FilterMixin,
+    MaxMixin,
+    OffsetMixin,
+    TicketIdMixin,
+)
+from ansible_collections.cisco.nd.plugins.module_utils.endpoints.query_params import (
+    EndpointQueryParams,
+)
 from ansible_collections.cisco.nd.plugins.module_utils.endpoints.v1.manage.base_path import (
     BasePath,
 )
 from ansible_collections.cisco.nd.plugins.module_utils.common.pydantic_compat import (
-    ConfigDict,
     Field,
 )
-from ansible_collections.cisco.nd.plugins.module_utils.endpoints.mixins import (
-    FabricNameMixin,
-)
-from ansible_collections.cisco.nd.plugins.module_utils.endpoints.query_params import (
-    LuceneQueryParams,
+from ansible_collections.cisco.nd.plugins.module_utils.endpoints.base import (
+    NDEndpointBaseModel,
 )
 
-# Common config for basic validation
-COMMON_CONFIG = ConfigDict(validate_assignment=True)
 
-
-class EpManageFabricSwitchesGet(FabricNameMixin, LuceneQueryParams, NDEndpointBaseModel):
+class FabricSwitchesGetEndpointParams(FilterMixin, MaxMixin, OffsetMixin, EndpointQueryParams):
     """
     # Summary
 
-    ND Manage Fabrics Switches GET Endpoint
+    Endpoint-specific query parameters for list fabric switches endpoint.
+
+    ## Parameters
+
+    - hostname: Filter by switch hostname (optional)
+    - max: Maximum number of results (optional, from `MaxMixin`)
+    - offset: Pagination offset (optional, from `OffsetMixin`)
+    - filter: Lucene filter expression (optional, from `FilterMixin`)
+
+    ## Usage
+
+    ```python
+    params = FabricSwitchesGetEndpointParams(hostname="leaf1", max=100)
+    query_string = params.to_query_string()
+    # Returns: "hostname=leaf1&max=100"
+    ```
+    """
+
+    hostname: Optional[str] = Field(default=None, min_length=1, description="Filter by switch hostname")
+
+
+class FabricSwitchesAddEndpointParams(ClusterNameMixin, TicketIdMixin, EndpointQueryParams):
+    """
+    # Summary
+
+    Endpoint-specific query parameters for add switches to fabric endpoint.
+
+    ## Parameters
+
+    - cluster_name: Target cluster name for multi-cluster deployments (optional, from `ClusterNameMixin`)
+    - ticket_id: Change control ticket ID (optional, from `TicketIdMixin`)
+
+    ## Usage
+
+    ```python
+    params = FabricSwitchesAddEndpointParams(cluster_name="cluster1", ticket_id="CHG12345")
+    query_string = params.to_query_string()
+    # Returns: "clusterName=cluster1&ticketId=CHG12345"
+    ```
+    """
+
+
+class _EpManageFabricsSwitchesBase(FabricNameMixin, NDEndpointBaseModel):
+    """
+    Base class for Fabric Switches endpoints.
+
+    Provides common functionality for all HTTP methods on the
+    /api/v1/manage/fabrics/{fabricName}/switches endpoint.
+    """
+
+    @property
+    def _base_path(self) -> str:
+        """Build the base endpoint path."""
+        if self.fabric_name is None:
+            raise ValueError("fabric_name must be set before accessing path")
+        return BasePath.path("fabrics", self.fabric_name, "switches")
+
+
+class EpManageFabricsSwitchesGet(_EpManageFabricsSwitchesBase):
+    """
+    # Summary
+
+    List Fabric Switches Endpoint
 
     ## Description
 
-    Endpoint to retrieve all switches for the given fabric.
+    Endpoint to list all switches in a specific fabric with optional filtering.
 
     ## Path
 
     - /api/v1/manage/fabrics/{fabricName}/switches
-    - /api/v1/manage/fabrics/{fabricName}/switches?max=10000
+    - /api/v1/manage/fabrics/{fabricName}/switches?hostname=leaf1&max=100
 
     ## Verb
 
     - GET
 
+    ## Query Parameters
+
+    - hostname: Filter by switch hostname (optional)
+    - max: Maximum number of results (optional)
+    - offset: Pagination offset (optional)
+    - filter: Lucene filter expression (optional)
+
     ## Usage
 
     ```python
-    ep = EpManageFabricSwitchesGet(fabric_name="fabric1")
-    path = ep.path
-    verb = ep.verb
-    # Path will be: /api/v1/manage/fabrics/fabric1/switches?max=10000
+    # List all switches
+    request = EpManageFabricsSwitchesGet()
+    request.fabric_name = "MyFabric"
+    path = request.path
+    verb = request.verb
 
-    ep = EpManageFabricSwitchesGet(fabric_name="fabric1", max=500)
-    path = ep.path
-    # Path will be: /api/v1/manage/fabrics/fabric1/switches?max=500
+    # List with filtering
+    request = EpManageFabricsSwitchesGet()
+    request.fabric_name = "MyFabric"
+    request.endpoint_params.hostname = "leaf1"
+    request.endpoint_params.max = 100
+    path = request.path
+    verb = request.verb
+    # Path will be: /api/v1/manage/fabrics/MyFabric/switches?hostname=leaf1&max=100
     ```
     """
 
-    model_config = COMMON_CONFIG
-
-    class_name: Literal["EpManageFabricSwitchesGet"] = Field(default="EpManageFabricSwitchesGet", description="Class name for backward compatibility")
+    class_name: Literal["EpManageFabricsSwitchesGet"] = Field(
+        default="EpManageFabricsSwitchesGet",
+        frozen=True,
+        description="Class name for backward compatibility",
+    )
+    endpoint_params: FabricSwitchesGetEndpointParams = Field(
+        default_factory=FabricSwitchesGetEndpointParams,
+        description="Endpoint-specific query parameters",
+    )
 
     @property
     def path(self) -> str:
@@ -80,11 +175,10 @@ class EpManageFabricSwitchesGet(FabricNameMixin, LuceneQueryParams, NDEndpointBa
 
         - Complete endpoint path string, optionally including query parameters
         """
-        base_path = BasePath.path("fabrics", self.fabric_name, "switches")
-        query_string = self.to_query_string()
+        query_string = self.endpoint_params.to_query_string()
         if query_string:
-            return f"{base_path}?{query_string}"
-        return base_path
+            return f"{self._base_path}?{query_string}"
+        return self._base_path
 
     @property
     def verb(self) -> HttpVerbEnum:

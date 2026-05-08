@@ -86,10 +86,22 @@ class OffsetMixin(BaseModel):
     offset: Optional[int] = Field(default=None, ge=0, description="Pagination offset")
 
 
+class SwitchIdMixin(BaseModel):
+    """Mixin for endpoints that require switch_id parameter."""
+
+    switch_id: Optional[str] = Field(default=None, min_length=1, description="Switch serial number or ID")
+
+
 class SwitchSerialNumberMixin(BaseModel):
     """Mixin for endpoints that require switch_sn parameter."""
 
     switch_sn: Optional[str] = Field(default=None, min_length=1, description="Switch serial number")
+
+
+class TenantNameMixin(BaseModel):
+    """Mixin for endpoints that require tenant_name parameter."""
+
+    tenant_name: Optional[str] = Field(default=None, min_length=1, description="Tenant name")
 
 
 class TicketIdMixin(BaseModel):
