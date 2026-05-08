@@ -13,11 +13,11 @@ from __future__ import absolute_import, annotations, division, print_function
 
 from typing import Optional
 
+from ansible_collections.cisco.nd.plugins.module_utils.enums import BooleanStringEnum
 from ansible_collections.cisco.nd.plugins.module_utils.common.pydantic_compat import (
     BaseModel,
     Field,
 )
-from ansible_collections.cisco.nd.plugins.module_utils.enums import BooleanStringEnum
 
 
 class ClusterNameMixin(BaseModel):
@@ -30,6 +30,12 @@ class FabricNameMixin(BaseModel):
     """Mixin for endpoints that require fabric_name parameter."""
 
     fabric_name: Optional[str] = Field(default=None, min_length=1, max_length=64, description="Fabric name")
+
+
+class FilterMixin(BaseModel):
+    """Mixin for endpoints that require a Lucene filter expression."""
+
+    filter: Optional[str] = Field(default=None, min_length=1, description="Lucene filter expression")
 
 
 class ForceShowRunMixin(BaseModel):
@@ -50,12 +56,6 @@ class InclAllMsdSwitchesMixin(BaseModel):
     incl_all_msd_switches: BooleanStringEnum = Field(default=BooleanStringEnum.FALSE, description="Include all MSD switches")
 
 
-class InterfaceNameMixin(BaseModel):
-    """Mixin for endpoints that require interface_name parameter."""
-
-    interface_name: Optional[str] = Field(default=None, min_length=1, description="Interface name")
-
-
 class LinkUuidMixin(BaseModel):
     """Mixin for endpoints that require link_uuid parameter."""
 
@@ -68,16 +68,28 @@ class LoginIdMixin(BaseModel):
     login_id: Optional[str] = Field(default=None, min_length=1, description="Login ID")
 
 
+class MaxMixin(BaseModel):
+    """Mixin for endpoints that require a max results parameter."""
+
+    max: Optional[int] = Field(default=None, ge=1, description="Maximum number of results")
+
+
 class NetworkNameMixin(BaseModel):
     """Mixin for endpoints that require network_name parameter."""
 
     network_name: Optional[str] = Field(default=None, min_length=1, max_length=64, description="Network name")
 
 
-class NodeNameMixin(BaseModel):
-    """Mixin for endpoints that require node_name parameter."""
+class OffsetMixin(BaseModel):
+    """Mixin for endpoints that require a pagination offset parameter."""
 
-    node_name: Optional[str] = Field(default=None, min_length=1, description="Node name")
+    offset: Optional[int] = Field(default=None, ge=0, description="Pagination offset")
+
+
+class SwitchIdMixin(BaseModel):
+    """Mixin for endpoints that require switch_id parameter."""
+
+    switch_id: Optional[str] = Field(default=None, min_length=1, description="Switch serial number or ID")
 
 
 class SwitchSerialNumberMixin(BaseModel):
@@ -86,13 +98,25 @@ class SwitchSerialNumberMixin(BaseModel):
     switch_sn: Optional[str] = Field(default=None, min_length=1, description="Switch serial number")
 
 
-class UpdateGroupNameMixin(BaseModel):
-    """Mixin for endpoints that require update_group_name parameter."""
+class TenantNameMixin(BaseModel):
+    """Mixin for endpoints that require tenant_name parameter."""
 
-    update_group_name: Optional[str] = Field(default=None, min_length=1, description="Update group name")
+    tenant_name: Optional[str] = Field(default=None, min_length=1, description="Tenant name")
+
+
+class TicketIdMixin(BaseModel):
+    """Mixin for endpoints that require ticket_id parameter."""
+
+    ticket_id: Optional[str] = Field(default=None, min_length=1, description="Change control ticket ID")
 
 
 class VrfNameMixin(BaseModel):
     """Mixin for endpoints that require vrf_name parameter."""
 
     vrf_name: Optional[str] = Field(default=None, min_length=1, max_length=64, description="VRF name")
+
+
+class NodeNameMixin(BaseModel):
+    """Mixin for endpoints that require node_name parameter."""
+
+    node_name: Optional[str] = Field(default=None, min_length=1, description="Node name")
