@@ -102,3 +102,9 @@ class VrfNameMixin(BaseModel):
     """Mixin for endpoints that require vrf_name parameter."""
 
     vrf_name: Optional[str] = Field(default=None, min_length=1, max_length=64, description="VRF name")
+
+
+class NodeNameMixin(BaseModel):
+    """Mixin for endpoints that require node_name parameter."""
+
+    node_name: Optional[str] = Field(default=None, min_length=1, description="Node name")
