@@ -14,7 +14,6 @@ from ansible_collections.cisco.nd.plugins.module_utils.nd_config_collection impo
     NDConfigCollection,
 )
 
-
 # =========================================================================
 # Exceptions
 # =========================================================================

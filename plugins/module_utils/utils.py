@@ -87,4 +87,3 @@ def remove_unwanted_keys(data: Dict, unwanted_keys: List[Union[str, List[str]]])
                 pass
 
     return data
-
