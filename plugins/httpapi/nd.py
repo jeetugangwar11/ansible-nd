@@ -441,6 +441,19 @@ class HttpApi(HttpApiBase):
         self.login(self.connection.get_option("remote_user"), self.connection.get_option("password"))
         return True
 
+    @staticmethod
+    def _has_partial_failure(response_data):
+        """Return True when a response contains a nested ND failure status."""
+        if isinstance(response_data, dict):
+            for key, value in response_data.items():
+                if key == "status" and isinstance(value, str) and value.lower() in {"failed", "failure", "error"}:
+                    return True
+                if HttpApi._has_partial_failure(value):
+                    return True
+        elif isinstance(response_data, list):
+            return any(HttpApi._has_partial_failure(item) for item in response_data)
+        return False
+
     def _verify_response(self, response, method, path, data):
         """Process the return code and response object from ND"""
         response_data = None
@@ -455,9 +468,9 @@ class HttpApi(HttpApiBase):
             path = response.geturl()
             self.info.update(self._get_formated_info(response))
 
-            # Handle possible ND error information
-            if response_code not in [200, 201, 202, 204]:
-                self.error = dict(code=self.status, message=response_data)
+            # Handle possible ND partial success responses (HTTP 207) by checking for nested failure statuses in the response body.
+            if response_code not in [200, 201, 202, 204, 207] or self._has_partial_failure(response_data):
+                self.error = dict(code=response_code, message=response_data)
 
         self.info["method"] = method
         if self.error is not None:
